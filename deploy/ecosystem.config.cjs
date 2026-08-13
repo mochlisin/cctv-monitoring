@@ -5,30 +5,34 @@
  */
 module.exports = {
     apps: [
+        /**
+         * MediaMTX — media server. Harus hidup lebih dulu dari yang lain.
+         *
+         * Aplikasi ini tidak pernah menyentuh kamera secara langsung: Next
+         * mendorong daftar path ke MediaMTX lewat Control API, thumbnail
+         * membaca RTSP lokalnya, dan worker HSE mengambil frame dari sana juga.
+         * Tanpa MediaMTX, ketiganya gagal sekaligus — dan gejalanya menyesatkan,
+         * karena yang terlihat adalah thumbnail 503 dan daftar path kosong,
+         * bukan pesan "media server mati".
+         *
+         * Ini binary, bukan skrip Node, jadi `interpreter: "none"` wajib —
+         * tanpanya PM2 akan mencoba menjalankannya dengan `node` dan gagal
+         * dengan galat sintaks yang membingungkan.
+         */
         {
-            name: "cctv-monitoring",
+            name: "mediamtx",
             cwd: "/www/wwwroot/cctv-monitoring",
-            script: "node_modules/next/dist/bin/next",
-            args: "start",
+            script: "./bin/mediamtx",
+            args: "./mediamtx.yml",
+            interpreter: "none",
 
-            // WAJIB satu instance, mode fork — JANGAN cluster.
-            //
-            // Tiap proses menjalankan sinkronisasi path MediaMTX sendiri
-            // (instrumentation.ts) dan punya map dedupe thumbnail sendiri.
-            // Mode cluster berarti N proses menembak MediaMTX bersamaan dan
-            // men-spawn N ffmpeg untuk satu thumbnail yang sama.
+            // Satu instance. Dua MediaMTX akan berebut port yang sama, dan yang
+            // kalah mati diam-diam lalu di-restart terus oleh PM2.
             instances: 1,
             exec_mode: "fork",
 
-            env: {
-                NODE_ENV: "production",
-                PORT: "3000",
-                // Hanya dengarkan localhost; Nginx yang menghadap internet.
-                HOSTNAME: "127.0.0.1",
-            },
-
             autorestart: true,
-            max_memory_restart: "1G",
+            restart_delay: 5000,
             time: true,
         },
 
