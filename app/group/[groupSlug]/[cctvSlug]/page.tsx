@@ -90,8 +90,11 @@ export default async function GroupCCTVDetailPage({
        <div className="flex-1 flex items-center justify-center p-4">
           <div className="w-full max-w-5xl aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl relative">
              <div className="w-full h-full"> 
-                  <CCTVPlayer 
-                    streamName={String(cctv.id)} 
+                  <CCTVPlayer
+                    streamName={cctv.slug}
+                    // Sama seperti halaman detail publik: overlay hanya untuk
+                    // pengguna yang login, karena endpoint-nya mewajibkan sesi.
+                    hse={cctv.hseEnabled && currentUser !== null}
                   />
              </div>
           </div>

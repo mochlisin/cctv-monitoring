@@ -1,28 +1,43 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-
-const JWT_SECRET =
-  process.env.JWT_SECRET || "your-secret-key-change-in-production";
+import {
+  STREAM_GRANT_COOKIE,
+  isProxyPath,
+  slugFromProxyPath,
+  verifyStreamGrant,
+} from "@/lib/streamAccess";
 
 export default async function middleware(request: NextRequest) {
-  const token = request.cookies.get("auth-token")?.value;
   const { pathname } = request.nextUrl;
 
-  // Halaman public (login only)
-  const isLoginPage = pathname === "/login";
+  // ============================================
+  // GERBANG PROXY MEDIA
+  // Dijalankan sebelum rewrite ke MediaMTX, sehingga percobaan menebak path
+  // ditolak di sini tanpa pernah menyentuh media server.
+  // ============================================
+  if (isProxyPath(pathname)) {
+    const slug = slugFromProxyPath(pathname);
+    if (!slug) return new NextResponse("Forbidden", { status: 403 });
 
-  // Jika ada token dan mencoba akses login, redirect ke dashboard
-  if (token && isLoginPage) {
-    try {
-      // Verify token menggunakan Web Crypto API atau skip verification di middleware
-      // Karena jwt library tidak support di edge runtime
-      return NextResponse.redirect(new URL("/admin", request.url));
-    } catch (error) {
-      // Token tidak valid, lanjutkan ke halaman login
-    }
+    const granted = await verifyStreamGrant(
+      request.cookies.get(STREAM_GRANT_COOKIE)?.value,
+      slug
+    );
+    if (!granted) return new NextResponse("Forbidden", { status: 403 });
+
+    return NextResponse.next();
   }
 
-  // Jika tidak ada token dan mencoba akses halaman protected
+  // ============================================
+  // AREA ADMIN
+  // ============================================
+  const token = request.cookies.get("auth-token")?.value;
+  const isLoginPage = pathname === "/login";
+
+  if (token && isLoginPage) {
+    return NextResponse.redirect(new URL("/admin", request.url));
+  }
+
   if (!token && !isLoginPage) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
@@ -31,5 +46,10 @@ export default async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/login"],
+  matcher: [
+    "/admin/:path*",
+    "/login",
+    "/stream-proxy/:path*",
+    "/webrtc-proxy/:path*",
+  ],
 };

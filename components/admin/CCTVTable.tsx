@@ -33,7 +33,60 @@ type CCTV = {
   [key: string]: any; // Allow additional fields
 };
 
-export default function CCTVTable({ data, canManage }: { data: CCTV[], canManage: boolean }) {
+/** Ringkasan status siaran per slug, dari MediaMTX. */
+export type StreamStatusSummary = {
+  slug: string;
+  streaming: boolean;
+  registered: boolean;
+  viewers: number;
+};
+
+export default function CCTVTable({
+  data,
+  canManage,
+  streamStatus = [],
+}: {
+  data: CCTV[];
+  canManage: boolean;
+  streamStatus?: StreamStatusSummary[];
+}) {
+  const statusBySlug = new Map(streamStatus.map((s) => [s.slug, s]));
+
+  /**
+   * `streaming: false` itu normal saat tidak ada penonton — konsekuensi
+   * sourceOnDemand, bukan tanda kamera bermasalah. Yang benar-benar patut
+   * dicurigai adalah kamera yang tidak terdaftar di media server.
+   */
+  const renderStreamStatus = (slug?: string | null) => {
+    if (!slug) return null;
+    const status = statusBySlug.get(slug);
+
+    if (!status?.registered) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600">
+          <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+          Tidak terdaftar
+        </span>
+      );
+    }
+
+    if (status.streaming) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-green-600">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+          Disiarkan · {status.viewers} penonton
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400">
+        <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+        Siaga
+      </span>
+    );
+  };
+
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
@@ -128,8 +181,22 @@ export default function CCTVTable({ data, canManage }: { data: CCTV[], canManage
                 <tr key={cctv.id} className="hover:bg-slate-50/50 transition-colors group">
                 <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                            <Camera className="w-4 h-4" />
+                        {/* Thumbnail sekaligus indikator keterjangkauan: kalau
+                            gambarnya muncul, kamera benar-benar bisa dihubungi. */}
+                        <div className="w-14 h-10 shrink-0 rounded-lg bg-slate-100 overflow-hidden flex items-center justify-center text-slate-400">
+                            {cctv.slug && cctv.isActive ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                    src={`/thumbnail/${cctv.slug}`}
+                                    alt=""
+                                    loading="lazy"
+                                    decoding="async"
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => { e.currentTarget.style.display = "none"; }}
+                                />
+                            ) : (
+                                <Camera className="w-4 h-4" />
+                            )}
                         </div>
                         <div>
                             <p className="font-bold text-slate-900 flex items-center gap-2">
@@ -141,6 +208,7 @@ export default function CCTVTable({ data, canManage }: { data: CCTV[], canManage
                                 )}
                             </p>
                             <p className="text-[10px] font-medium text-slate-500">{cctv.kota}</p>
+                            {cctv.isActive && renderStreamStatus(cctv.slug)}
                         </div>
                     </div>
                 </td>

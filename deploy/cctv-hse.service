@@ -1,0 +1,46 @@
+[Unit]
+Description=Worker HSE (deteksi helm & rompi dari CCTV)
+# MediaMTX harus lebih dulu hidup: worker membaca frame dari RTSP lokalnya,
+# bukan langsung dari kamera.
+After=network-online.target mediamtx.service mysql.service
+Wants=network-online.target mediamtx.service
+
+[Service]
+Type=simple
+User=cctv
+Group=cctv
+WorkingDirectory=/opt/cctv-monitoring
+EnvironmentFile=/opt/cctv-monitoring/.env
+ExecStart=/usr/bin/node hse/index.mjs
+
+Restart=always
+# Penyebab paling umum gagal start adalah berkas model yang salah, dan mencoba
+# ulang tanpa jeda hanya membanjiri journal.
+RestartSec=10
+
+# Worker mengalah pada beban server, bukan bersaing dengannya. Yang harus tetap
+# responsif adalah Next dan MediaMTX — kalau streaming tersendat karena deteksi
+# APD, prioritasnya sudah terbalik.
+Nice=10
+IOSchedulingClass=idle
+CPUWeight=30
+
+# Batas memori: ONNX Runtime memegang arena memorinya sendiri dan tidak akan
+# melepaskannya. Kalau tembus, lebih baik worker mati dan dinyalakan ulang
+# daripada OOM killer memilih MySQL.
+MemoryMax=900M
+
+# SIGTERM memicu penutupan event yang masih terbuka dan flush bucket; beri
+# waktu menyelesaikannya sebelum dipaksa.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# Perlu menulis snapshot ke .hse/ di dalam direktori kerja.
+ReadWritePaths=/opt/cctv-monitoring/.hse
+
+[Install]
+WantedBy=multi-user.target

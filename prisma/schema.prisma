@@ -155,13 +155,127 @@ model Cctv {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // HSE monitoring
+  // Menyalakan ini membuat kamera ditarik RTSP-nya terus-menerus oleh worker
+  // HSE, bukan lagi on-demand. Itu beban tetap ke kamera dan ke CPU, jadi
+  // sengaja opt-in per kamera.
+  hseEnabled     Boolean @default(false)
+  // Wajib helm di area ini. Beberapa area (misal ruang kontrol) hanya wajib vest.
+  hseRequireHelm Boolean @default(true)
+  hseRequireVest Boolean @default(true)
+  // Detik pelanggaran harus bertahan sebelum dicatat sebagai event. Menahan
+  // false positive dari deteksi sekali-lewat.
+  hseMinDuration Int     @default(10)
+
   // Relations
   group     Group? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   createdBy User?  @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  hseEvents  HseEvent[]
+  hseBuckets HseBucket[]
 
   @@index([groupId])
   @@index([createdById])
   @@index([isPublic])
   @@index([isActive])
+  // Untuk query bounding-box peta (getPublicCctvsInBounds)
+  @@index([latitude, longitude])
+  // Worker HSE hanya mengambil kamera yang aktif DAN di-enable.
+  @@index([hseEnabled, isActive])
   @@map("cctv")
+}
+
+// ============================================
+// HSE MONITORING (APD: helm & rompi)
+// ============================================
+
+/// Jenis pelanggaran. Disimpan sebagai string, bukan enum Prisma, supaya
+/// menambah jenis baru (sarung tangan, masker, sepatu) tidak perlu migrasi ALTER.
+/// Nilai yang dipakai worker: NO_HELMET | NO_VEST | NO_HELMET_NO_VEST
+model HseEvent {
+  id     Int @id @default(autoincrement())
+  cctvId Int
+
+  type String @db.VarChar(32)
+
+  /// Satu event = satu periode pelanggaran yang berkelanjutan di satu kamera,
+  /// bukan satu frame. Worker memperpanjang endedAt selama pelanggaran masih
+  /// terlihat, dan menutup event setelah bersih selama HSE_EVENT_GAP detik.
+  /// Alasannya: sampling 1 frame per beberapa detik berarti satu orang tanpa
+  /// helm selama 2 menit akan menghasilkan ~24 baris kalau dicatat per frame.
+  startedAt DateTime @default(now())
+  endedAt   DateTime
+  /// Detik, diturunkan dari endedAt - startedAt saat event ditutup.
+  duration  Int      @default(0)
+
+  /// Angka pada frame terburuk selama event berlangsung.
+  personCount    Int   @default(0)
+  violatorCount  Int   @default(0)
+  maxConfidence  Float @default(0)
+
+  /// Warna APD yang terlihat, mis. {"helmet":{"kuning":2},"vest":{"oranye":1}}.
+  /// Warna helm sering menandai peran (putih=pengawas, kuning=pekerja), jadi
+  /// berguna untuk menelusuri siapa yang melanggar tanpa menyimpan wajah.
+  colors Json?
+
+  /// Path relatif terhadap HSE_SNAPSHOT_DIR. Frame bukti dengan kotak deteksi.
+  snapshot String? @db.VarChar(255)
+
+  /// OPEN saat masih berlangsung, CLOSED setelah selesai, lalu operator dapat
+  /// menandai ACKNOWLEDGED (benar, sudah ditindak) atau FALSE_POSITIVE.
+  /// FALSE_POSITIVE dikeluarkan dari statistik kepatuhan dan menjadi kandidat
+  /// data untuk fine-tune model.
+  status String @db.VarChar(16) @default("OPEN")
+
+  acknowledgedById Int?
+  acknowledgedAt   DateTime?
+  note             String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cctv Cctv @relation(fields: [cctvId], references: [id], onDelete: Cascade)
+
+  // Daftar event per kamera, terbaru dulu.
+  @@index([cctvId, startedAt])
+  // Worker mencari event OPEN milik kamera saat frame baru masuk.
+  @@index([cctvId, status])
+  // Dasbor lintas kamera diurutkan waktu.
+  @@index([startedAt])
+  @@map("hse_event")
+}
+
+/// Agregat per selang waktu — sumber angka kepatuhan di dasbor.
+///
+/// Menyimpan setiap deteksi mentah akan membengkak cepat (3 kamera x 12 frame
+/// per menit = 51 ribu baris/hari). Bucket menyimpan hitungan saja, jadi satu
+/// baris per kamera per selang, dan grafik kepatuhan cukup satu query agregat.
+model HseBucket {
+  id     Int @id @default(autoincrement())
+  cctvId Int
+
+  /// Awal selang, dibulatkan ke kelipatan HSE_BUCKET_MINUTES.
+  bucketStart DateTime
+  /// Jumlah frame yang berhasil dianalisis pada selang ini. Pembagi untuk
+  /// membedakan "0 pelanggaran karena patuh" dari "0 karena worker mati".
+  frames      Int @default(0)
+
+  /// Jumlah deteksi orang (bukan orang unik — tidak ada tracking identitas).
+  personCount   Int @default(0)
+  helmetOk      Int @default(0)
+  helmetMissing Int @default(0)
+  vestOk        Int @default(0)
+  vestMissing   Int @default(0)
+
+  /// Sebaran warna APD pada selang ini, bentuk sama dengan HseEvent.colors.
+  colors Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cctv Cctv @relation(fields: [cctvId], references: [id], onDelete: Cascade)
+
+  // Worker melakukan upsert pada (kamera, selang) setiap frame.
+  @@unique([cctvId, bucketStart])
+  @@index([bucketStart])
+  @@map("hse_bucket")
 }

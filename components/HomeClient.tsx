@@ -3,10 +3,11 @@
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import CCTVCard from "@/components/CCTVCard";
-import { type Cctv as PrismaCctv } from "@prisma/client";
+import { getPublicCctvsInBounds, type PublicCctv } from "@/actions/cctv";
+import { MAP_BOUNDS_THRESHOLD, type CctvBounds } from "@/lib/cctv";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Map, List, Grid, MonitorPlay, X, LayoutList } from "lucide-react";
 import MapSidebar from "@/components/map/MapSidebar";
 import { 
@@ -23,11 +24,22 @@ const CCTVMap = dynamic(() => import("@/components/CCTVMap"), {
 });
 const BottomNav = dynamic(() => import("@/components/BottomNav"), { ssr: false });
 
-type Cctv = PrismaCctv & {
-  group?: { name: string; slug: string } | null;
-};
+type Cctv = PublicCctv;
 
-export default function HomeClient({ cctvs }: { cctvs: Cctv[] }) {
+export default function HomeClient({ cctvs, total = 0 }: { cctvs: Cctv[]; total?: number }) {
+  // Di bawah ambang, semua penanda sudah ada di klien dan peta cukup memfilter
+  // sendiri. Di atas ambang, peta meminta hanya kamera di dalam viewport.
+  const useBoundsFetching = total > MAP_BOUNDS_THRESHOLD;
+  const [mapCctvs, setMapCctvs] = useState<Cctv[]>(cctvs);
+
+  const handleBoundsChange = async (bounds: CctvBounds) => {
+      try {
+          setMapCctvs(await getPublicCctvsInBounds(bounds));
+      } catch (error) {
+          console.error("Gagal memuat kamera pada area ini:", error);
+      }
+  };
+
   const [viewMode, setViewMode] = useState<"list" | "map">("list");
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -50,6 +62,11 @@ export default function HomeClient({ cctvs }: { cctvs: Cctv[] }) {
     acc[kota][kecamatan].push(cctv);
     return acc;
   }, {} as Record<string, Record<string, Cctv[]>>);
+
+  // Multiview memakai slug, bukan ID numerik — path stream sekarang berbasis slug.
+  const selectedSlugs = selectedIds
+      .map((id) => cctvs.find((c) => c.id === id)?.slug)
+      .filter((slug): slug is string => Boolean(slug));
 
   const handleToggleSelect = (id: number) => {
     setSelectedIds(prev => 
@@ -179,10 +196,11 @@ export default function HomeClient({ cctvs }: { cctvs: Cctv[] }) {
                 </aside>
                 {/* Map Container */}
                 <div className="flex-1 relative bg-slate-100">
-                     <CCTVMap 
-                        data={cctvs as any} 
+                     <CCTVMap
+                        data={useBoundsFetching ? mapCctvs : cctvs}
                         selectedId={selectedMapCctvId}
                         onMarkerClick={handleMapMarkerClick}
+                        onBoundsChange={useBoundsFetching ? handleBoundsChange : undefined}
                      />
                      {/* Mobile Overlay/Drawer for list view in map mode */}
                      <div className="absolute bottom-30 left-1/2 -translate-x-1/2 z-20 lg:hidden">
@@ -245,7 +263,7 @@ export default function HomeClient({ cctvs }: { cctvs: Cctv[] }) {
                                      <div id={`cctv-card-${cctv.id}`} key={cctv.id}>
                                         <CCTVCard
                                             title={cctv.name || `CCTV ${cctv.id}`}
-                                            streamName={String(cctv.id)}
+                                            streamName={cctv.slug}
                                             slug={cctv.slug}
                                             groupSlug={cctv.group?.slug}
                                             isActive={cctv.isActive}
@@ -297,7 +315,7 @@ export default function HomeClient({ cctvs }: { cctvs: Cctv[] }) {
           <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom-10 fade-in duration-300">
               <div className="bg-slate-900 text-white p-2 rounded-full shadow-2xl flex items-center gap-4 pl-6 pr-2 border border-slate-700/50">
                   <span className="font-bold text-sm">{selectedIds.length} Selected</span>
-                  <Link href={`/multiview?ids=${selectedIds.join(",")}`}>
+                  <Link href={`/multiview?ids=${selectedSlugs.join(",")}`}>
                     <Button size="sm" className="rounded-full bg-blue-600 hover:bg-blue-500 font-bold">
                         <MonitorPlay className="w-4 h-4 mr-2" />
                         Watch Live View

@@ -1,0 +1,25 @@
+[Unit]
+Description=CCTV Monitoring (Next.js)
+After=network-online.target mysql.service mediamtx.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cctv
+Group=cctv
+WorkingDirectory=/opt/cctv-monitoring
+Environment=NODE_ENV=production
+Environment=PORT=3000
+# Hanya dengarkan localhost: yang menghadap internet adalah reverse proxy.
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+
+# Butuh tulis ke .thumbnails di dalam WorkingDirectory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

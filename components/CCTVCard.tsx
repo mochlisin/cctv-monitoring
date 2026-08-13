@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import CCTVPlayer from "./CCTVPlayer";
 import { Camera } from "lucide-react";
@@ -25,6 +28,21 @@ export default function CCTVCard({
   isPlaying?: boolean;
   onPlay?: () => void;
 }) {
+  // Permintaan thumbnail pertama harus menunggu MediaMTX menyalakan koneksi
+  // RTSP (sourceOnDemand), jadi kegagalan sesaat itu wajar. Coba lagi beberapa
+  // kali sebelum menyerah ke placeholder.
+  const [thumbnailAttempt, setThumbnailAttempt] = useState(0);
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+
+  const handleThumbnailError = () => {
+      if (thumbnailAttempt >= 2) {
+          setThumbnailFailed(true);
+          return;
+      }
+      const nextAttempt = thumbnailAttempt + 1;
+      setTimeout(() => setThumbnailAttempt(nextAttempt), 2000 * nextAttempt);
+  };
+
   const href = (!selectionMode && slug)
     ? groupSlug 
       ? `/group/${groupSlug}/${slug}`
@@ -76,16 +94,10 @@ export default function CCTVCard({
                  </div>
              )}
 
-             {!selectionMode && isActive && (
-              <div className="flex items-center gap-1.5 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-500 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
-                  </span>
-                  <span className="text-[10px] font-bold text-blue-700 tracking-wider">LIVE</span>
-              </div>
-             )}
-            
+             {/* Badge LIVE dulu ada di sini, tapi player sudah punya badge
+                 statusnya sendiri di pojok kiri atas video — dan badge player
+                 lebih jujur karena mengikuti keadaan koneksi yang sebenarnya. */}
+
             {/* Share Link Icon */}
            
         </div>
@@ -103,11 +115,29 @@ export default function CCTVCard({
             ) : (
                 // Thumbnail / Placeholder State
                 <div className="w-full h-full relative group/thumbnail">
-                    {/* Placeholder Image or Gradient */}
+                    {/* Frame terbaru dari kamera; jauh lebih murah daripada
+                        memulai stream hanya untuk tahu kameranya hidup. */}
                     <div className="absolute inset-0 bg-slate-800 flex items-center justify-center">
-                            <Camera className="w-12 h-12 text-slate-700" />
+                            {slug && !thumbnailFailed ? (
+                                // Sengaja <img>, bukan next/image: sumbernya sudah
+                                // JPEG kecil ber-cache dari endpoint kita sendiri.
+                                // next/image akan memproses ulang setiap frame di
+                                // server — beban yang justru ingin kita hindari.
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                    key={thumbnailAttempt}
+                                    src={thumbnailAttempt ? `/thumbnail/${slug}?r=${thumbnailAttempt}` : `/thumbnail/${slug}`}
+                                    alt={`Pratinjau ${title}`}
+                                    loading="lazy"
+                                    decoding="async"
+                                    className="w-full h-full object-cover"
+                                    onError={handleThumbnailError}
+                                />
+                            ) : (
+                                <Camera className="w-12 h-12 text-slate-700" />
+                            )}
                     </div>
-                    
+
                     {/* Play Overlay */}
                     <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover/thumbnail:bg-black/40 transition-colors">
                         <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm border border-white/40 flex items-center justify-center shadow-2xl transition-transform transform group-hover/thumbnail:scale-110">

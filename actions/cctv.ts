@@ -1,16 +1,54 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { buildHikvisionRtsp } from "@/lib/hikvision";
 import { getUserWithMemberships, getUserId } from "@/lib/auth";
 import { Prisma } from "@prisma/client";
+import { syncStreamPaths, removeStreamPath } from "@/actions/stream";
+import { CCTV_CACHE_TAG, type CctvBounds } from "@/lib/cctv";
 
 interface GetCctvsFilter {
   publicOnly?: boolean;
   userId?: number; // Maps to createdById
   groupId?: number;
 }
+
+/**
+ * Bentuk data yang boleh sampai ke browser.
+ *
+ * Baris Cctv utuh mengandung ipAddress, username, dan password RTSP. Karena
+ * halaman depan meneruskan hasil query ke client component, mengembalikan baris
+ * utuh berarti kredensial setiap kamera publik ikut ter-serialisasi ke HTML.
+ * Semua query yang datanya menyeberang ke klien WAJIB memakai select sempit.
+ */
+const PUBLIC_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  rt: true,
+  rw: true,
+  wilayah: true,
+  kecamatan: true,
+  kota: true,
+  latitude: true,
+  longitude: true,
+  isActive: true,
+  group: { select: { name: true, slug: true } },
+} satisfies Prisma.CctvSelect;
+
+/** Sama seperti PUBLIC_SELECT, plus kolom yang dibutuhkan tabel admin. */
+const ADMIN_SELECT = {
+  ...PUBLIC_SELECT,
+  isPublic: true,
+  groupId: true,
+  createdById: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.CctvSelect;
+
+export type PublicCctv = Prisma.CctvGetPayload<{ select: typeof PUBLIC_SELECT }>;
+export type AdminCctv = Prisma.CctvGetPayload<{ select: typeof ADMIN_SELECT }>;
 
 // Helper to check for Super Admin
 // Helper to check for System Super Admin (Thoriq/Platform Owner)
@@ -25,17 +63,77 @@ async function isSystemSuperAdminUser(): Promise<boolean> {
   );
 }
 
-// Helper to trigger stream server sync
+// Samakan konfigurasi media server dengan data CCTV terbaru, lalu batalkan
+// cache daftar CCTV. syncStreamPaths sudah menelan errornya sendiri, jadi
+// kegagalan media server tidak pernah membatalkan perubahan data.
 async function triggerStreamServerSync() {
-    try {
-        // Fire and forget
-        fetch("http://localhost:3001/api/sync", { method: "POST" }).catch(err => console.error("Sync trigger failed:", err));
-    } catch (e) {
-        // Ignore
-    }
+    await syncStreamPaths();
+    revalidateTag(CCTV_CACHE_TAG, "max");
+    // Halaman depan sekarang di-cache, jadi harus ikut dibatalkan.
+    revalidatePath("/");
 }
 
-export async function getCctvs(filter?: GetCctvsFilter) {
+/**
+ * Daftar CCTV publik. Di-cache dan diberi tag, jadi halaman publik yang ramai
+ * tidak memukul MySQL sekali per request — cache dibatalkan lewat
+ * revalidateTag(CCTV_CACHE_TAG) dari action yang mengubah data.
+ */
+export async function getPublicCctvs(options?: {
+  userId?: number;
+  limit?: number;
+}): Promise<PublicCctv[]> {
+  const limit = options?.limit ?? 500;
+  const ownerId = options?.userId ?? null;
+
+  const load = unstable_cache(
+    async () =>
+      prisma.cctv.findMany({
+        where: {
+          isPublic: true,
+          ...(ownerId ? { createdById: ownerId } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        select: PUBLIC_SELECT,
+      }),
+    ["public-cctv", String(ownerId), String(limit)],
+    { tags: [CCTV_CACHE_TAG], revalidate: 300 }
+  );
+
+  return load();
+}
+
+/** Jumlah CCTV publik — dipakai peta untuk memutuskan perlu query per-viewport. */
+export async function getPublicCctvCount(): Promise<number> {
+  const load = unstable_cache(
+    async () => prisma.cctv.count({ where: { isPublic: true } }),
+    ["public-cctv-count"],
+    { tags: [CCTV_CACHE_TAG], revalidate: 300 }
+  );
+  return load();
+}
+
+/**
+ * CCTV publik di dalam viewport peta. Tidak di-cache karena batas viewport
+ * berubah terus; dipakai hanya saat jumlah kamera melewati MAP_BOUNDS_THRESHOLD.
+ */
+export async function getPublicCctvsInBounds(
+  bounds: CctvBounds,
+  limit = 300
+): Promise<PublicCctv[]> {
+  return prisma.cctv.findMany({
+    where: {
+      isPublic: true,
+      latitude: { gte: bounds.south, lte: bounds.north },
+      longitude: { gte: bounds.west, lte: bounds.east },
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: PUBLIC_SELECT,
+  });
+}
+
+export async function getCctvs(filter?: GetCctvsFilter): Promise<AdminCctv[]> {
   const userId = await getUserId();
   const where: Prisma.CctvWhereInput = {};
 
@@ -43,15 +141,11 @@ export async function getCctvs(filter?: GetCctvsFilter) {
   if (filter?.publicOnly) {
     where.isPublic = true;
     if (filter.userId) where.createdById = filter.userId;
-    return prisma.cctv.findMany({ 
-      where, 
-      orderBy: { createdAt: "desc" }, 
-      include: { 
-         group: { 
-            select: { name: true, slug: true } 
-         } 
-      } 
-    }) as Promise<any[]>;
+    return prisma.cctv.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: ADMIN_SELECT,
+    });
   }
 
   // Protected Access
@@ -81,17 +175,14 @@ export async function getCctvs(filter?: GetCctvsFilter) {
   return prisma.cctv.findMany({
     where,
     orderBy: { createdAt: "desc" },
-    include: {
-      group: {
-         select: { name: true, slug: true }
-      }
-    }
-  }) as Promise<any[]>;
+    select: ADMIN_SELECT,
+  });
 }
 
 export async function getCctvBySlug(slug: string) {
     return prisma.cctv.findUnique({
-        where: { slug }
+        where: { slug },
+        select: ADMIN_SELECT,
     });
 }
 
@@ -187,7 +278,7 @@ export async function createCctv(formData: FormData) {
     },
   });
 
-  triggerStreamServerSync();
+  await triggerStreamServerSync();
   revalidatePath("/cctv");
   revalidatePath("/admin/cctv");
 }
@@ -293,7 +384,7 @@ export async function updateCctv(id: number, formData: FormData) {
     },
   });
 
-  triggerStreamServerSync();
+  await triggerStreamServerSync();
   revalidatePath("/cctv");
   revalidatePath("/admin/cctv");
 }
@@ -324,7 +415,8 @@ export async function deleteCctv(id: number) {
     where: { id },
   });
 
-  triggerStreamServerSync();
+  await removeStreamPath(currentCctv.slug);
+  await triggerStreamServerSync();
   revalidatePath("/cctv");
   revalidatePath("/admin/cctv");
 }
@@ -368,7 +460,7 @@ export async function regenerateCctvSlug(id: number) {
     },
   });
 
-  triggerStreamServerSync();
+  await triggerStreamServerSync();
   revalidatePath("/cctv");
   revalidatePath("/admin/cctv");
   revalidatePath(`/admin/cctv/${id}/edit`);
@@ -411,7 +503,10 @@ export async function toggleCCTVActive(id: number, isActive: boolean) {
     },
   });
 
-  triggerStreamServerSync();
+  // Kamera yang dinonaktifkan harus langsung dicabut dari media server,
+  // bukan menunggu sync berikutnya.
+  if (!isActive) await removeStreamPath(currentCctv.slug);
+  await triggerStreamServerSync();
   revalidatePath("/cctv");
   revalidatePath("/");
   revalidatePath("/admin/cctv");

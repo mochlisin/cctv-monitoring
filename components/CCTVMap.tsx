@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
+import type { CctvBounds } from "@/lib/cctv";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import Link from "next/link";
@@ -36,8 +37,9 @@ type CCTV = {
     id: number;
     name: string;
     isActive: boolean;
-    isPublic: boolean;
-    slug?: string | null;
+    isPublic?: boolean;
+    /** Slug UUID: dipakai sebagai nama path stream, bukan ID numerik. */
+    slug: string;
     group?: { name: string; slug: string } | null;
     latitude?: number | null;
     longitude?: number | null;
@@ -83,9 +85,44 @@ interface CCTVMapProps {
     onPlay?: (id: number) => void;
     selectedId?: number | null;
     onMarkerClick?: (id: number) => void;
+    /**
+     * Dipasang hanya kalau jumlah kamera melewati MAP_BOUNDS_THRESHOLD. Di
+     * bawah ambang itu semua penanda sudah ada di klien, jadi memanggil server
+     * setiap kali peta digeser hanya menambah beban tanpa manfaat.
+     */
+    onBoundsChange?: (bounds: CctvBounds) => void;
 }
 
-export default function CCTVMap({ data, onPlay, selectedId, onMarkerClick }: CCTVMapProps) {
+/** Laporkan viewport peta ke pemanggil, dengan jeda agar pan tidak membanjiri server. */
+function BoundsWatcher({ onChange }: { onChange: (bounds: CctvBounds) => void }) {
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const report = (map: L.Map) => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => {
+            const bounds = map.getBounds();
+            onChange({
+                north: bounds.getNorth(),
+                south: bounds.getSouth(),
+                east: bounds.getEast(),
+                west: bounds.getWest(),
+            });
+        }, 400);
+    };
+
+    const map = useMapEvents({
+        moveend: () => report(map),
+        zoomend: () => report(map),
+    });
+
+    useEffect(() => () => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+    }, []);
+
+    return null;
+}
+
+export default function CCTVMap({ data, onPlay, selectedId, onMarkerClick, onBoundsChange }: CCTVMapProps) {
     // Calculate center based on average of points if available, else default
     const validCoords = data.filter(c => c.latitude && c.longitude);
     const center: [number, number] = validCoords.length > 0
@@ -110,6 +147,7 @@ export default function CCTVMap({ data, onPlay, selectedId, onMarkerClick }: CCT
                 />
                 
                 <MapController selectedId={selectedId} data={data} />
+                {onBoundsChange && <BoundsWatcher onChange={onBoundsChange} />}
 
                 {data.map((cctv, idx) => {
                     const position = getCoordinates(cctv, idx);
@@ -130,7 +168,7 @@ export default function CCTVMap({ data, onPlay, selectedId, onMarkerClick }: CCT
                                     {/* Video Preview Section */}
                                     <div className="relative aspect-video bg-black">
                                         {cctv.isActive ? (
-                                            <CCTVPlayer streamName={String(cctv.id)} />
+                                            <CCTVPlayer streamName={cctv.slug} />
                                         ) : (
                                             <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 bg-slate-100">
                                                 <Camera size={32} className="mb-2 opacity-50" />
@@ -155,7 +193,7 @@ export default function CCTVMap({ data, onPlay, selectedId, onMarkerClick }: CCT
                                         </p>
                                         
                                         {cctv.isActive ? (
-                                            <Link href={`/multiview?ids=${cctv.id}`}>
+                                            <Link href={`/multiview?ids=${cctv.slug}`}>
                                                 <button 
                                                     className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
                                                 >

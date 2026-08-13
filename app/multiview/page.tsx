@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import  {Suspense} from "react";
 import CCTVPlayer from "@/components/CCTVPlayer";
 import { ArrowLeft } from "lucide-react";
@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 
 function MultiViewContent() {
     const searchParams = useSearchParams();
-    const router = useRouter();
-    const ids = searchParams.get("ids")?.split(",") || [];
+    // Berisi slug kamera (UUID), bukan ID numerik.
+    const slugs = searchParams.get("ids")?.split(",").filter(Boolean) || [];
+    const ids = slugs;
 
     return (
         <div className="min-h-screen bg-slate-950 text-white">
@@ -30,20 +31,22 @@ function MultiViewContent() {
             </div>
 
             {/* Grid */}
-            <div className={`p-4 grid gap-4 h-[calc(100vh-64px)] overflow-y-auto
+            {/* Di layar kecil selalu 1 kolom: tile 4 kolom di HP tidak terbaca
+                dan memaksa decoding video sebanyak jumlah tile sekaligus. */}
+            <div className={`p-2 sm:p-4 grid gap-2 sm:gap-4 h-[calc(100dvh-64px)] overflow-y-auto auto-rows-min
                 ${ids.length === 1 ? 'grid-cols-1' : ''}
                 ${ids.length === 2 ? 'grid-cols-1 md:grid-cols-2' : ''}
-                ${ids.length >= 3 && ids.length <= 4 ? 'grid-cols-2' : ''}
-                ${ids.length > 4 && ids.length <= 9 ? 'grid-cols-3' : ''}
-                ${ids.length > 9 ? 'grid-cols-4' : ''}
+                ${ids.length >= 3 && ids.length <= 4 ? 'grid-cols-1 sm:grid-cols-2' : ''}
+                ${ids.length > 4 && ids.length <= 9 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : ''}
+                ${ids.length > 9 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : ''}
             `}>
-                {ids.map((id) => (
-                    <div key={id} className="relative bg-black rounded-xl overflow-hidden border border-slate-800 flex flex-col group">
-                        <div className="flex-1 relative">
-                            <CCTVPlayer streamName={id} />
+                {ids.map((slug, index) => (
+                    <div key={slug} className="relative bg-black rounded-xl overflow-hidden border border-slate-800 group">
+                        <div className="relative aspect-video">
+                            <CCTVPlayer streamName={slug} />
                         </div>
-                        <div className="absolute top-2 left-2 bg-black/60 backdrop-blur px-2 py-1 rounded text-xs font-mono font-bold">
-                            CAM {id}
+                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur px-2 py-1 rounded text-xs font-mono font-bold z-40 pointer-events-none">
+                            CAM {index + 1}
                         </div>
                     </div>
                 ))}

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Search, Loader2 } from "lucide-react";
+import { searchLocation, type GeocodeResult } from "@/actions/geocode";
 
 // Fix icons
 const iconUrl = "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png";
@@ -51,7 +52,7 @@ function FlyToLocation({ lat, lng }: { lat: number; lng: number }) {
 export default function LocationPicker({ latitude, longitude, onLocationSelect }: LocationPickerProps) {
     const [searchQuery, setSearchQuery] = useState("");
     const [isSearching, setIsSearching] = useState(false);
-    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
     const [showResults, setShowResults] = useState(false);
     
     // Default Center (Jakarta) or Current Selection
@@ -65,9 +66,8 @@ export default function LocationPicker({ latitude, longitude, onLocationSelect }
 
         setIsSearching(true);
         try {
-            const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5`);
-            const data = await response.json();
-            setSearchResults(data);
+            const results = await searchLocation(searchQuery);
+            setSearchResults(results);
             setShowResults(true);
         } catch (error) {
             console.error("Search failed:", error);
@@ -76,12 +76,10 @@ export default function LocationPicker({ latitude, longitude, onLocationSelect }
         }
     };
 
-    const selectResult = (result: any) => {
-        const lat = parseFloat(result.lat);
-        const lon = parseFloat(result.lon);
-        onLocationSelect(lat, lon);
+    const selectResult = (result: GeocodeResult) => {
+        onLocationSelect(result.latitude, result.longitude);
         setShowResults(false);
-        setSearchQuery(result.display_name);
+        setSearchQuery(result.displayName);
     };
 
     return (
@@ -124,7 +122,7 @@ export default function LocationPicker({ latitude, longitude, onLocationSelect }
                                 onClick={() => selectResult(result)}
                                 className="w-full text-left px-4 py-3 hover:bg-slate-50 text-sm text-slate-700 transition-colors"
                             >
-                                {result.display_name}
+                                {result.displayName}
                             </button>
                         ))}
                     </div>

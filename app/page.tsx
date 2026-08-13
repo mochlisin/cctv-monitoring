@@ -1,15 +1,23 @@
-import { getCctvs } from "@/actions/cctv";
+import { Suspense } from "react";
+import { getPublicCctvs, getPublicCctvCount } from "@/actions/cctv";
 import HomeClient from "@/components/HomeClient";
-import { type Cctv as PrismaCctv } from "@prisma/client";
 
-type Cctv = PrismaCctv & {
-  group?: { name: string; slug: string } | null;
-};
-
-export const dynamic = "force-dynamic";
+// Tidak lagi force-dynamic: daftarnya di-cache dan diberi tag, lalu dibatalkan
+// dari action yang mengubah data. Halaman publik yang ramai tidak lagi memukul
+// MySQL sekali per request.
+export const revalidate = 300;
 
 export default async function Home() {
-  const cctvs = await getCctvs({ publicOnly: true });
+  const [cctvs, total] = await Promise.all([
+    getPublicCctvs(),
+    getPublicCctvCount(),
+  ]);
 
-  return <HomeClient cctvs={cctvs} />;
+  // HomeClient memakai useSearchParams; tanpa Suspense, halaman ini tidak bisa
+  // di-prerender dan kita kehilangan manfaat cache-nya.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <HomeClient cctvs={cctvs} total={total} />
+    </Suspense>
+  );
 }

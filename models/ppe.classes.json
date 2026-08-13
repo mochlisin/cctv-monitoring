@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "Daftar kelas model PPE. WAJIB persis sama dengan urutan saat model dilatih.",
+    "Salah urutan tidak memunculkan error — ia memunculkan deteksi yang meyakinkan",
+    "tapi salah label, misalnya 'vehicle' dilaporkan sebagai orang tanpa helm.",
+    "",
+    "Bawaan ini adalah urutan dataset Roboflow 'Construction Site Safety' (css-data),",
+    "yang paling umum dipakai untuk YOLO PPE dan urut alfabetis.",
+    "",
+    "Worker tidak membaca nama ini secara harfiah: nama dipetakan ke peran",
+    "(orang / helm / tanpa-helm / rompi / tanpa-rompi) oleh hse/classes.mjs, sehingga",
+    "penamaan seperti 'helmet', 'no_helmet', atau 'head' juga dikenali."
+  ],
+  "names": [
+    "Hardhat",
+    "Mask",
+    "NO-Hardhat",
+    "NO-Mask",
+    "NO-Safety Vest",
+    "Person",
+    "Safety Cone",
+    "Safety Vest",
+    "machinery",
+    "vehicle"
+  ]
+}

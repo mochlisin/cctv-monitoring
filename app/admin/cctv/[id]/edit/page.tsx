@@ -12,8 +12,27 @@ export default async function EditPage({ params }: { params: Promise<{ id: strin
   }
 
   const id = Number(resolvedParams.id);
+  // Select sempit: data ini diteruskan ke CctvForm (client component), jadi
+  // kolom yang tidak dipakai form tidak perlu ikut menyeberang ke browser.
   const cctv = await prisma.cctv.findUnique({
     where: { id },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      rt: true,
+      rw: true,
+      wilayah: true,
+      kecamatan: true,
+      kota: true,
+      latitude: true,
+      longitude: true,
+      ipAddress: true,
+      isActive: true,
+      isPublic: true,
+      groupId: true,
+      createdById: true,
+    },
   });
 
   if (!cctv) {

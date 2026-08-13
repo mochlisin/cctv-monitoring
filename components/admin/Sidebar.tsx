@@ -1,5 +1,5 @@
 "use client";
-import { LayoutDashboard, Camera, Users, Settings, Building2 } from "lucide-react";
+import { LayoutDashboard, Camera, Users, Settings, Building2, HardHat } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 
 const menuItems = [
@@ -10,6 +10,7 @@ const menuItems = [
     path: "/admin",
   },
   { id: "cctv", label: "Master CCTV", icon: Camera, path: "/admin/cctv" },
+  { id: "hse", label: "HSE Monitoring", icon: HardHat, path: "/admin/hse" },
   { id: "groups", label: "Master Group", icon: Building2, path: "/admin/groups" },
   { id: "users", label: "Master User", icon: Users, path: "/admin/users" },
   {

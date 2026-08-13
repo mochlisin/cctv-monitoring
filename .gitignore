@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...tapi contoh tanpa rahasia tetap ikut, supaya hasil clone bisa langsung jalan
+!.env.example
 
 # vercel
 .vercel
@@ -41,4 +43,20 @@ yarn-error.log*
 next-env.d.ts
 
 /app/generated/prisma
-/streams
+
+# sertifikat self-signed yang dibuat next dev
+auto.crt
+auto.key
+
+# binary MediaMTX (dipasang lewat: npm run media:install)
+/bin
+
+# cache thumbnail kamera
+/.thumbnails
+
+# bobot model HSE — puluhan megabyte, dipasang lewat: npm run hse:model
+/models/*.onnx
+
+# frame bukti pelanggaran HSE. Berisi orang yang dapat dikenali di lokasi kerja
+# mereka; jangan pernah ikut ke repositori.
+/.hse

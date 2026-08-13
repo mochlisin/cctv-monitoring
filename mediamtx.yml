@@ -1,0 +1,60 @@
+# Konfigurasi MediaMTX untuk cctv-publik.
+# Jalankan dengan: npm run media
+#
+# MediaMTX menarik RTSP dari kamera dan meneruskannya sebagai WebRTC (latensi
+# sub-detik) dan LL-HLS (fallback ~1 detik) tanpa transcode sama sekali.
+
+logLevel: info
+
+###############################################
+# Control API — dipakai actions/stream.ts
+# Hanya localhost: browser tidak pernah menyentuhnya.
+###############################################
+api: yes
+apiAddress: 127.0.0.1:9997
+
+###############################################
+# WebRTC — transport utama
+###############################################
+webrtc: yes
+# Signaling (WHEP) di-proxy lewat Next di /webrtc-proxy, jadi cukup localhost.
+webrtcAddress: 127.0.0.1:8889
+# Media mengalir langsung browser <-> server, jadi port ini HARUS bisa
+# dijangkau klien (buka di firewall; UDP 8189, plus TCP 8189 sebagai cadangan
+# kalau jaringan klien memblokir UDP).
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcIPsFromInterfaces: yes
+# Untuk akses dari luar LAN, isi dengan IP publik / domain server:
+# webrtcAdditionalHosts: [cctv.example.id]
+webrtcAdditionalHosts: []
+
+###############################################
+# HLS — fallback kalau WebRTC gagal (UDP diblokir, browser lama)
+###############################################
+hls: yes
+hlsAddress: 127.0.0.1:8888
+hlsVariant: lowLatency
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsAlwaysRemux: no
+
+###############################################
+# RTSP lokal — hanya untuk pengambilan thumbnail
+# ffmpeg membaca dari sini, bukan langsung dari kamera. Efeknya: kredensial
+# RTSP kamera tidak pernah muncul di argumen proses (terlihat di daftar proses),
+# dan koneksi ke kamera tetap satu, dikelola MediaMTX.
+###############################################
+rtsp: yes
+rtspAddress: 127.0.0.1:8554
+rtspTransports: [tcp]
+
+###############################################
+# Server protokol lain tidak dipakai
+###############################################
+rtmp: no
+srt: no
+
+# Path diisi otomatis oleh aplikasi lewat Control API (actions/stream.ts).
+# Sengaja dikosongkan supaya path yang tidak terdaftar tidak bisa diakses.
+paths: {}
