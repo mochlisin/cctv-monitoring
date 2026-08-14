@@ -98,9 +98,24 @@ export const config = {
     modelPath: process.env.HSE_MODEL_PATH ?? path.join(root, "models", "ppe.onnx"),
     classesPath: process.env.HSE_CLASSES_PATH ?? path.join(root, "models", "ppe.classes.json"),
     /**
-     * Sisi masukan model. 480 adalah kompromi: 640 sekitar 75% lebih lambat
-     * dengan perbaikan akurasi yang kecil pada substream kamera yang memang
-     * hanya 512x288. Harus kelipatan 32.
+     * Sisi masukan model. Harus kelipatan 32.
+     *
+     * INI BUKAN TOMBOL AKURASI, dan mengubahnya sendiri tidak akan bekerja:
+     * ekspor YOLO menghasilkan graf berukuran TETAP, jadi menaikkan angka ini
+     * tanpa mengekspor ulang model pada imgsz yang sama membuat ONNX Runtime
+     * menolak masukan saat worker start. Lihat scripts/fetch-hse-model.mjs.
+     *
+     * Angka ini juga BATAS ATAS seluruh sistem, dan itu punya akibat yang
+     * berlawanan dengan dugaan: karena setiap frame diperkecil ke 480 sebelum
+     * masuk model, menaikkan resolusi kamera di atas itu tidak menambah satu
+     * piksel pun pada orangnya — hanya menambah bandwidth dan beban dekode.
+     *
+     * Pada server 2 core / 2 GB, menaikkannya ke 640 justru MENURUNKAN
+     * keselamatan: inferensi ~75% lebih lambat, adapt() melebarkan intervalnya
+     * sendiri, dan cakupan waktu (kolom coveredSeconds) turun — lebih banyak
+     * detik yang tidak terlihat siapa pun. Yang benar-benar menaikkan piksel di
+     * badan orang tanpa biaya inferensi adalah membuat orangnya lebih besar di
+     * dalam frame: penempatan/zoom kamera, atau crop area kerja. Lihat README.
      */
     inputSize: num("HSE_INPUT_SIZE", 480),
     /** Jumlah thread ONNX Runtime. 1 disengaja: sisakan CPU untuk Next & MySQL. */

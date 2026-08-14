@@ -187,6 +187,12 @@ async function tick() {
 async function analyze(entry, frame) {
     const { detections, inferenceMs } = await detector.detect(frame);
 
+    // Dihitung sekali dan dipakai dua kali: mematikan pembacaan warna, dan
+    // dicatat ke bucket. Yang kedua penting untuk keselamatan — deteksi pada
+    // frame inframerah lebih lemah, jadi porsinya harus ikut terlihat saat
+    // angka kepatuhan dibaca, bukan lenyap ke dalam rata-rata.
+    const monochrome = isMonochrome(frame, config.inputSize, config.inputSize);
+
     const assessment = assessFrame(detections, frame, config.inputSize, {
         requireHelm: entry.camera.hseRequireHelm,
         requireVest: entry.camera.hseRequireVest,
@@ -194,7 +200,7 @@ async function analyze(entry, frame) {
         // Kamera dalam mode inframerah malam hari tidak punya warna untuk
         // dibaca; memaksakannya hanya menghasilkan "abu-abu" yang menumpuk
         // jadi pola palsu di laporan.
-        readColors: !isMonochrome(frame, config.inputSize, config.inputSize),
+        readColors: !monochrome,
     });
 
     const letterbox = entry.source.letterbox;
@@ -203,19 +209,33 @@ async function analyze(entry, frame) {
         at: Date.now(),
         persons: assessment.persons.map((p) => ({
             box: toNormalized(p.box, letterbox),
+            helmetBox: p.helmetBox ? toNormalized(p.helmetBox, letterbox) : null,
+            vestBox: p.vestBox ? toNormalized(p.vestBox, letterbox) : null,
             helmet: p.helmet,
             vest: p.vest,
             helmetColor: p.helmetColor,
             vestColor: p.vestColor,
             confidence: Math.round(p.confidence * 100) / 100,
             violating: p.violating,
+            // Ikut dikirim supaya overlay tidak menggambar tebakan geometri
+            // sebagai kotak yang setara dengan deteksi. Kotak orang tiruan dari
+            // personsFromHeads tingginya 6x kotak kepala — angka yang memang
+            // hanya untuk digambar, bukan hasil pengukuran.
+            inferred: p.inferred,
         })),
         personCount: assessment.tally.personCount,
         violatorCount: assessment.tally.violatorCount,
         inferenceMs: Math.round(inferenceMs),
     };
 
-    await store.record(entry.camera, assessment, frame);
+    // Interval yang berlaku saat analisis ini dijalankan adalah lama waktu yang
+    // diwakilinya. Menjumlahkannya per selang menghasilkan cakupan waktu yang
+    // sebenarnya — dan otomatis ikut mengecil saat adapt() melebarkan interval
+    // karena CPU sibuk, yang memang berarti lokasi itu lebih jarang terlihat.
+    await store.record(entry.camera, assessment, frame, {
+        monochrome,
+        representsSeconds: intervalFor(entry),
+    });
     adapt(inferenceMs);
 }
 

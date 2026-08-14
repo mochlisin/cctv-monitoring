@@ -49,7 +49,7 @@ class BucketAccumulator {
         this.pending = new Map();
     }
 
-    add(cctvId, at, tally, colors) {
+    add(cctvId, at, tally, colors, { monochrome = false, representsSeconds = 0 } = {}) {
         const start = bucketStartFor(at, this.minutes);
         const key = `${cctvId}:${start.getTime()}`;
         let entry = this.pending.get(key);
@@ -63,6 +63,11 @@ class BucketAccumulator {
                 helmetMissing: 0,
                 vestOk: 0,
                 vestMissing: 0,
+                tooSmall: 0,
+                helmetUnknown: 0,
+                vestUnknown: 0,
+                monoFrames: 0,
+                coveredSeconds: 0,
                 colors: { helmet: {}, vest: {} },
             };
             this.pending.set(key, entry);
@@ -74,6 +79,11 @@ class BucketAccumulator {
         entry.helmetMissing += tally.helmetMissing;
         entry.vestOk += tally.vestOk;
         entry.vestMissing += tally.vestMissing;
+        entry.tooSmall += tally.tooSmall ?? 0;
+        entry.helmetUnknown += tally.helmetUnknown ?? 0;
+        entry.vestUnknown += tally.vestUnknown ?? 0;
+        if (monochrome) entry.monoFrames++;
+        entry.coveredSeconds += Math.round(representsSeconds);
         mergeTally(entry.colors.helmet, colors.helmet);
         mergeTally(entry.colors.vest, colors.vest);
     }
@@ -121,6 +131,11 @@ class BucketAccumulator {
                         helmetMissing: { increment: entry.helmetMissing },
                         vestOk: { increment: entry.vestOk },
                         vestMissing: { increment: entry.vestMissing },
+                        tooSmall: { increment: entry.tooSmall },
+                        helmetUnknown: { increment: entry.helmetUnknown },
+                        vestUnknown: { increment: entry.vestUnknown },
+                        monoFrames: { increment: entry.monoFrames },
+                        coveredSeconds: { increment: entry.coveredSeconds },
                         colors: {
                             ...(Object.keys(merged.helmet).length ? { helmet: merged.helmet } : {}),
                             ...(Object.keys(merged.vest).length ? { vest: merged.vest } : {}),
@@ -147,24 +162,42 @@ class BucketAccumulator {
  * Kotak digambar oleh ffmpeg, bukan JavaScript. Tidak ada label teks: drawtext
  * membutuhkan berkas font yang keberadaannya berbeda-beda antar distribusi, dan
  * merah untuk pelanggar / hijau untuk yang patuh sudah cukup terbaca.
+ *
+ * Warna helm dan rompi TIDAK ikut tergambar di sini, walau datanya ada. Alasannya
+ * sama dengan tidak adanya label teks: satu-satunya cara menuliskan "helm kuning"
+ * adalah drawtext. Warnanya sudah tersimpan di kolom `colors` event, jadi tidak
+ * ada informasi yang hilang — hanya tidak dibakar ke gambar.
  */
 async function writeSnapshot(config, frame, persons, relativePath) {
     const target = path.join(config.snapshotDir, relativePath);
     await fs.mkdir(path.dirname(target), { recursive: true });
 
     const size = config.inputSize;
+
+    const drawbox = (box, color, thickness) => {
+        if (!box) return null;
+        const [x1, y1, x2, y2] = box;
+        const x = Math.max(0, Math.round(x1));
+        const y = Math.max(0, Math.round(y1));
+        const w = Math.min(size - x, Math.round(x2 - x1));
+        const h = Math.min(size - y, Math.round(y2 - y1));
+        if (w <= 1 || h <= 1) return null;
+        return `drawbox=x=${x}:y=${y}:w=${w}:h=${h}:color=${color}:t=${thickness}`;
+    };
+
+    // Hirarkinya sama dengan overlay di video, dan itu disengaja: bukti yang
+    // ditinjau operator harus memperlihatkan hal yang sama dengan yang dilihatnya
+    // saat menonton. Kotak orang turun jadi konteks tipis; yang tebal adalah
+    // kotak APD-nya, karena itulah yang dinilai. Kotak helm saat helm tidak
+    // dipakai adalah kotak kepala telanjang — menunjuk tepat ke sana jauh lebih
+    // berguna daripada kotak merah keliling tubuh.
     const boxes = persons
         .slice(0, 20)
-        .map((p) => {
-            const [x1, y1, x2, y2] = p.box;
-            const x = Math.max(0, Math.round(x1));
-            const y = Math.max(0, Math.round(y1));
-            const w = Math.min(size - x, Math.round(x2 - x1));
-            const h = Math.min(size - y, Math.round(y2 - y1));
-            if (w <= 1 || h <= 1) return null;
-            const color = p.violating ? "red" : "lime";
-            return `drawbox=x=${x}:y=${y}:w=${w}:h=${h}:color=${color}:t=3`;
-        })
+        .flatMap((p) => [
+            drawbox(p.box, p.violating ? "red" : "white", 1),
+            p.helmet === null ? null : drawbox(p.helmetBox, p.helmet ? "lime" : "red", 3),
+            p.vest === null ? null : drawbox(p.vestBox, p.vest ? "lime" : "red", 3),
+        ])
         .filter(Boolean);
 
     const args = [
@@ -232,10 +265,14 @@ export class Store {
      * @param {{id:number, name:string, hseMinDuration:number}} camera
      * @param {object} assessment hasil assessFrame
      * @param {Buffer} frame untuk snapshot
+     * @param {{monochrome?: boolean, representsSeconds?: number}} [context]
+     *   Keadaan pengambilan frame ini, dicatat demi cakupan — bukan demi
+     *   kelengkapan statistik. Tanpa keduanya, laporan kepatuhan tidak punya cara
+     *   menyatakan berapa banyak yang sebenarnya terlihat.
      */
-    async record(camera, assessment, frame) {
+    async record(camera, assessment, frame, context = {}) {
         const now = new Date();
-        this.buckets.add(camera.id, now, assessment.tally, assessment.colors);
+        this.buckets.add(camera.id, now, assessment.tally, assessment.colors, context);
 
         if (assessment.violationType) {
             await this.#onViolation(camera, assessment, frame, now);

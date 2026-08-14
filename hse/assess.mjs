@@ -143,8 +143,15 @@ export function assessFrame(detections, frame, size, rules) {
     // jauh untuk dinilai, menyusun orang tiruan dari kotak kepala hanya
     // memasukkan kembali deteksi yang baru saja kita putuskan terlalu kecil
     // untuk dipercaya.
+    // Orang yang dilihat model tapi dibuang karena terlalu kecil untuk dinilai.
+    // Dihitung di kedua jalur: yang lolos ambang pada jalur utama, dan yang
+    // lolos pada jalur cadangan. Sebelumnya keduanya hilang tanpa jejak.
+    let tooSmall = detectedPersons.length - persons.length;
+
     if (persons.length === 0 && detectedPersons.length === 0) {
-        persons = personsFromHeads(detections).filter((p) => p.box[3] - p.box[1] >= minHeight);
+        const inferred = personsFromHeads(detections);
+        persons = inferred.filter((p) => p.box[3] - p.box[1] >= minHeight);
+        tooSmall = inferred.length - persons.length;
     } else if (persons.length > 0) {
         const helmets = assign(persons, detections, HELMET_ROLES, headZone);
         const vests = assign(persons, detections, VEST_ROLES, torsoZone);
@@ -164,6 +171,18 @@ export function assessFrame(detections, frame, size, rules) {
         maxConfidence: 0,
         helmetMissingSeen: false,
         vestMissingSeen: false,
+        /**
+         * Orang yang dilihat model tapi terlalu kecil untuk dinilai.
+         *
+         * Berbahaya justru karena sebelumnya hilang tanpa jejak: area yang jauh
+         * dari kamera dilaporkan "tidak ada pelanggaran" padahal yang sebenarnya
+         * terjadi adalah "tidak terlihat". Angka ini besar berarti sudut atau
+         * resolusi kameranya yang perlu dibenahi, bukan modelnya.
+         */
+        tooSmall: Math.max(0, tooSmall),
+        /** APD yang tidak dapat dinilai — bukan patuh, bukan melanggar. */
+        helmetUnknown: 0,
+        vestUnknown: 0,
     };
 
     const colors = { helmet: {}, vest: {} };
@@ -196,8 +215,10 @@ export function assessFrame(detections, frame, size, rules) {
         tally.personCount++;
         if (helmet === true) tally.helmetOk++;
         if (helmet === false) tally.helmetMissing++;
+        if (helmet === null) tally.helmetUnknown++;
         if (vest === true) tally.vestOk++;
         if (vest === false) tally.vestMissing++;
+        if (vest === null) tally.vestUnknown++;
         if (violatesHelm) tally.helmetMissingSeen = true;
         if (violatesVest) tally.vestMissingSeen = true;
         if (violating) {
@@ -208,6 +229,18 @@ export function assessFrame(detections, frame, size, rules) {
 
         return {
             box: p.box,
+            // Kotak APD yang benar-benar dipakai untuk memutuskan status di
+            // atas, diteruskan supaya overlay bisa menunjuk ke helm dan rompinya
+            // alih-alih ke persegi besar keliling tubuh. Sengaja bukan hasil
+            // perhitungan ulang: kotak inilah yang menghasilkan keputusannya,
+            // jadi menggambar kotak lain berarti menggambar sesuatu yang tidak
+            // pernah dinilai.
+            //
+            // Perhatikan artinya bergantung pada status di sebelahnya:
+            // saat `helmet === false`, helmetBox adalah kotak KEPALA TELANJANG,
+            // bukan kotak helm. Begitu juga vestBox saat `vest === false`.
+            helmetBox: p.helmetDet?.box ?? null,
+            vestBox: p.vestDet?.box ?? null,
             helmet,
             vest,
             helmetColor,

@@ -225,6 +225,42 @@ export type HseSummary = {
     eventCount: number;
     openCount: number;
     colors: HseColors;
+    /**
+     * Cakupan pemantauan — wajib dibaca bersama angka kepatuhan, bukan sebagai
+     * pelengkap.
+     *
+     * "0 pelanggaran" pada kamera yang tidak melihat apa pun tampak identik
+     * dengan lokasi yang benar-benar patuh, dan pada sistem keselamatan itu
+     * kesalahan yang paling mahal. Angka-angka di bawah adalah satu-satunya cara
+     * membedakan keduanya.
+     */
+    coverage: {
+        /** Detik yang benar-benar terwakili analisis. */
+        coveredSeconds: number;
+        /**
+         * Detik yang seharusnya terpantau: jumlah kamera HSE x panjang rentang.
+         *
+         * Sengaja konservatif — kamera yang baru diaktifkan di tengah rentang
+         * tetap dihitung penuh, sehingga persentasenya cenderung LEBIH RENDAH
+         * dari kenyataan. Untuk angka keselamatan, meleset ke arah "mengaku
+         * kurang terpantau" jauh lebih aman daripada sebaliknya.
+         */
+        expectedSeconds: number;
+        /** Persen 0..100, null kalau tidak ada kamera HSE sama sekali. */
+        percent: number | null;
+        /** Frame dalam mode inframerah — deteksi lebih lemah di sini. */
+        monoFrames: number;
+        /**
+         * Total frame dianalisis, disalin ke sini supaya porsi inframerah bisa
+         * dihitung tanpa pemakainya perlu tahu medan mana pembaginya.
+         */
+        framesTotal: number;
+        /** Orang yang terlihat tapi terlalu jauh/kecil untuk dinilai. */
+        tooSmall: number;
+        /** Penilaian APD yang tidak dapat dibaca (tertutup, membelakangi kamera). */
+        helmetUnknown: number;
+        vestUnknown: number;
+    };
     /** Deret waktu untuk grafik, satu titik per hari. */
     daily: {
         day: string;
@@ -244,6 +280,9 @@ export type HseSummary = {
         vestOk: number;
         vestMissing: number;
         eventCount: number;
+        /** Cakupan per kamera — memperlihatkan kamera mana yang sedang buta. */
+        coveredSeconds: number;
+        tooSmall: number;
     }[];
 };
 
@@ -253,6 +292,10 @@ export async function getHseSummary(days = 7): Promise<HseSummary> {
         helmetOk: 0, helmetMissing: 0, vestOk: 0, vestMissing: 0,
         personCount: 0, frames: 0, eventCount: 0, openCount: 0,
         colors: {}, daily: [], hourly: Array(24).fill(0), perCamera: [],
+        coverage: {
+            coveredSeconds: 0, expectedSeconds: 0, percent: null,
+            monoFrames: 0, framesTotal: 0, tooSmall: 0, helmetUnknown: 0, vestUnknown: 0,
+        },
     };
     if (!scope) return empty;
 
@@ -264,6 +307,8 @@ export async function getHseSummary(days = 7): Promise<HseSummary> {
             select: {
                 cctvId: true, bucketStart: true, frames: true, personCount: true,
                 helmetOk: true, helmetMissing: true, vestOk: true, vestMissing: true, colors: true,
+                tooSmall: true, helmetUnknown: true, vestUnknown: true,
+                monoFrames: true, coveredSeconds: true,
             },
         }),
         prisma.hseEvent.findMany({
@@ -281,7 +326,12 @@ export async function getHseSummary(days = 7): Promise<HseSummary> {
         }),
     ]);
 
-    const summary: HseSummary = { ...empty, colors: { helmet: {}, vest: {} }, hourly: Array(24).fill(0) };
+    const summary: HseSummary = {
+        ...empty,
+        colors: { helmet: {}, vest: {} },
+        hourly: Array(24).fill(0),
+        coverage: { ...empty.coverage },
+    };
     const daily = new Map<string, HseSummary["daily"][number]>();
     const perCamera = new Map<number, HseSummary["perCamera"][number]>();
 
@@ -289,8 +339,14 @@ export async function getHseSummary(days = 7): Promise<HseSummary> {
         perCamera.set(camera.id, {
             cctvId: camera.id, name: camera.name, slug: camera.slug,
             helmetOk: 0, helmetMissing: 0, vestOk: 0, vestMissing: 0, eventCount: 0,
+            coveredSeconds: 0, tooSmall: 0,
         });
     }
+
+    // Dihitung dari jumlah kamera HSE, bukan dari data yang ada: kalau seluruh
+    // worker mati sepanjang rentang, tidak akan ada satu bucket pun — dan
+    // cakupan yang diturunkan dari bucket akan melaporkan 100% dari nol data.
+    summary.coverage.expectedSeconds = cameras.length * days * 86_400;
 
     for (const bucket of buckets) {
         summary.frames += bucket.frames;
@@ -299,6 +355,11 @@ export async function getHseSummary(days = 7): Promise<HseSummary> {
         summary.helmetMissing += bucket.helmetMissing;
         summary.vestOk += bucket.vestOk;
         summary.vestMissing += bucket.vestMissing;
+        summary.coverage.coveredSeconds += bucket.coveredSeconds;
+        summary.coverage.monoFrames += bucket.monoFrames;
+        summary.coverage.tooSmall += bucket.tooSmall;
+        summary.coverage.helmetUnknown += bucket.helmetUnknown;
+        summary.coverage.vestUnknown += bucket.vestUnknown;
 
         const day = bucket.bucketStart.toISOString().slice(0, 10);
         const entry = daily.get(day) ?? { day, helmetOk: 0, helmetMissing: 0, vestOk: 0, vestMissing: 0 };
@@ -314,6 +375,8 @@ export async function getHseSummary(days = 7): Promise<HseSummary> {
             camera.helmetMissing += bucket.helmetMissing;
             camera.vestOk += bucket.vestOk;
             camera.vestMissing += bucket.vestMissing;
+            camera.coveredSeconds += bucket.coveredSeconds;
+            camera.tooSmall += bucket.tooSmall;
         }
 
         const colors = parseHseColors(bucket.colors);
@@ -340,6 +403,19 @@ export async function getHseSummary(days = 7): Promise<HseSummary> {
 
     if (!Object.keys(summary.colors.helmet ?? {}).length) delete summary.colors.helmet;
     if (!Object.keys(summary.colors.vest ?? {}).length) delete summary.colors.vest;
+
+    // Dibatasi 100%: interval yang berlaku saat analisis dijalankan adalah
+    // perkiraan lama waktu yang diwakilinya, dan pada mode boost perkiraan itu
+    // bisa sedikit melebihi panjang selang sebenarnya. Melaporkan "104% terpantau"
+    // hanya akan membuat seluruh angka diragukan.
+    summary.coverage.framesTotal = summary.frames;
+    summary.coverage.percent =
+        summary.coverage.expectedSeconds > 0
+            ? Math.min(
+                  100,
+                  Math.round((summary.coverage.coveredSeconds / summary.coverage.expectedSeconds) * 1000) / 10
+              )
+            : null;
 
     return summary;
 }
@@ -412,6 +488,17 @@ export async function getHseCameras() {
 
 /* ---------------------------------------------------------------- kesehatan */
 
+/**
+ * Berapa lama tanpa frame sebelum kamera dianggap tidak mengirim apa pun lagi.
+ *
+ * Dibutuhkan karena `online` milik worker hanya menjadi false ketika proses
+ * ffmpeg-nya keluar. RTSP yang menggantung — kamera hidup, TCP tersambung, tapi
+ * tidak ada data — meninggalkan `online: true` selamanya dengan `lastFrameAt`
+ * yang tidak pernah maju. Itu kegagalan diam-diam: dasbor tampak sehat sementara
+ * lokasi itu tidak terlihat sama sekali.
+ */
+const STALE_FRAME_MS = 60_000;
+
 export type HseWorkerHealth = {
     ok: boolean;
     reason?: string;
@@ -426,7 +513,18 @@ export type HseWorkerHealth = {
         lastInferenceAt: number | null;
         boosted: boolean;
         violatorCount: number;
+        /** Masih diklaim online tapi frame terakhirnya sudah lama sekali. */
+        stale: boolean;
     }[];
+    /**
+     * Kamera yang hseEnabled di database tapi TIDAK dipantau worker sama sekali.
+     *
+     * Terjadi saat jumlah kamera melewati HSE_MAX_CAMERAS, atau saat batas di
+     * Next dan di worker berbeda. Sebelum ini kamera seperti itu tidak muncul di
+     * mana pun: tabel kamera menampilkannya menyala, dasbor tidak menyebutnya,
+     * dan tidak ada satu pun angka yang mengaku tidak mencakupnya.
+     */
+    unmonitored?: { id: number; name: string }[];
 };
 
 /**
@@ -437,14 +535,43 @@ export type HseWorkerHealth = {
  * layar tetap menunjukkan nol pelanggaran, dan nol itu dibaca sebagai aman.
  */
 export async function getHseWorkerHealth(): Promise<HseWorkerHealth> {
+    let reported: HseWorkerHealth;
     try {
         const response = await fetch(`${WORKER_URL}/health`, {
             signal: AbortSignal.timeout(3000),
             cache: "no-store",
         });
         if (!response.ok) return { ok: false, reason: `Worker menjawab ${response.status}` };
-        return { ok: true, ...(await response.json()) };
+        reported = { ok: true, ...(await response.json()) };
     } catch {
         return { ok: false, reason: "Worker HSE tidak berjalan" };
     }
+
+    // Tandai kamera yang mengaku online tapi frame terakhirnya sudah basi.
+    const now = Date.now();
+    const cameras = (reported.cameras ?? []).map((camera) => ({
+        ...camera,
+        stale: Boolean(camera.lastFrameAt) && now - camera.lastFrameAt! > STALE_FRAME_MS,
+    }));
+
+    // Bandingkan dengan database: kamera yang dinyalakan tapi tidak ada dalam
+    // daftar worker adalah blind spot, dan sebelum ini tidak dilaporkan ke mana
+    // pun. Kegagalan pada query ini tidak boleh menjatuhkan seluruh panel status,
+    // jadi hasilnya sekadar dikosongkan.
+    let unmonitored: HseWorkerHealth["unmonitored"] = [];
+    try {
+        const scope = await cctvScope();
+        if (scope) {
+            const enabled = await prisma.cctv.findMany({
+                where: { hseEnabled: true, isActive: true, ...scope },
+                select: { id: true, name: true },
+            });
+            const monitored = new Set(cameras.map((c) => c.id));
+            unmonitored = enabled.filter((c) => !monitored.has(c.id));
+        }
+    } catch (error) {
+        console.error("[hse] gagal memeriksa kamera tak terpantau:", (error as Error).message);
+    }
+
+    return { ...reported, cameras, unmonitored };
 }

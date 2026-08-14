@@ -41,6 +41,53 @@ const ICE_GATHER_TIMEOUT_MS = 1500;
 // Seberapa jauh playback HLS boleh tertinggal dari live edge sebelum lompat maju.
 const MAX_DRIFT_SECONDS = 6;
 
+// ---------------------------------------------------------------------------
+// Pengawas latensi WebRTC
+// ---------------------------------------------------------------------------
+// Jalur HLS punya dua pengaman terhadap ketertinggalan (liveSyncPosition dan
+// seek berkala di bawah). Jalur WebRTC — yang justru dipakai secara default —
+// dulu tidak punya apa pun: browser boleh menumpuk jitter buffer sedalam apa
+// pun, dan siaran yang tertinggal tetap terlihat mulus dan tetap berlabel
+// "LIVE". Yang di bawah ini memberinya batas.
+//
+// Jitter buffer normal berkisar 50–200 ms. Di atas satu detik, ada frame yang
+// menumpuk di suatu tempat.
+const WEBRTC_MAX_DELAY_SECONDS = 1.2;
+// Batas yang diminta ke browser di muka (Chrome 114+ `jitterBufferTarget`).
+const WEBRTC_TARGET_DELAY_MS = 150;
+const WEBRTC_STATS_INTERVAL_MS = 4000;
+// Berapa kali menyambung ulang sebelum menyerah dan mengatakannya terus terang.
+//
+// Batas ini penting: kalau timbunan frame ada di HULU (uplink kamera lebih
+// sempit dari bitrate-nya, sehingga RTSP over TCP mengantre alih-alih
+// membuang), menyambung ulang browser tidak memperbaiki apa pun — dan tanpa
+// batas, player akan berkedip menyambung ulang setiap beberapa detik selamanya.
+// Lebih baik berhenti dan memberi tahu ke mana harus melihat.
+const MAX_LATENCY_RECONNECTS = 3;
+
+type LatencySample = { delay: number; emitted: number };
+
+/** Rerata kedalaman jitter buffer sejak sampel sebelumnya, dalam detik. */
+function readLatencySample(report: RTCStatsReport): LatencySample | null {
+    for (const entry of Array.from(report.values())) {
+        const stat = entry as {
+            type?: string;
+            kind?: string;
+            jitterBufferDelay?: number;
+            jitterBufferEmittedCount?: number;
+        };
+        if (
+            stat.type === "inbound-rtp" &&
+            stat.kind === "video" &&
+            typeof stat.jitterBufferDelay === "number" &&
+            typeof stat.jitterBufferEmittedCount === "number"
+        ) {
+            return { delay: stat.jitterBufferDelay, emitted: stat.jitterBufferEmittedCount };
+        }
+    }
+    return null;
+}
+
 type Transport = "webrtc" | "hls";
 
 type FullscreenVideo = HTMLVideoElement & {
@@ -143,11 +190,14 @@ export default function CCTVPlayer({
   const [width, setWidth] = useState(0);
   // Player dimatikan total saat tab disembunyikan atau ter-scroll keluar layar.
   const [active, setActive] = useState(true);
+  // Dinaikkan oleh pengawas latensi untuk memaksa sesi dibangun ulang.
+  const [reconnectNonce, setReconnectNonce] = useState(0);
 
   const onScreenRef = useRef(true);
   const recordingRef = useRef(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const lastTapRef = useRef<number>(0);
+  const latencyReconnectsRef = useRef(0);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -264,8 +314,15 @@ export default function CCTVPlayer({
         bundlePolicy: "max-bundle",
       });
       let sessionUrl: string | null = null;
+      let statsTimer: ReturnType<typeof setInterval> | null = null;
+
+      const stopWatching = () => {
+        if (statsTimer) clearInterval(statsTimer);
+        statsTimer = null;
+      };
 
       teardown = () => {
+        stopWatching();
         pc.onconnectionstatechange = null;
         pc.ontrack = null;
         pc.close();
@@ -277,6 +334,31 @@ export default function CCTVPlayer({
         }
       };
 
+      /**
+       * Minta browser menahan playout sesingkat mungkin.
+       *
+       * Bawaan Chrome adalah menumbuhkan jitter buffer secara adaptif demi
+       * kemulusan, dan pada aliran yang datang bergelombang ia bisa menetap di
+       * beberapa detik lalu tidak pernah menyusut lagi. Untuk CCTV, gambar
+       * tepat waktu lebih berharga daripada gambar mulus.
+       */
+      const capPlayoutDelay = () => {
+        for (const receiver of pc.getReceivers()) {
+            const tunable = receiver as RTCRtpReceiver & {
+                jitterBufferTarget?: number | null;
+                playoutDelayHint?: number | null;
+            };
+            try {
+                // Chrome 114+ — milidetik.
+                tunable.jitterBufferTarget = WEBRTC_TARGET_DELAY_MS;
+                // Nama lama untuk hal yang sama — detik.
+                tunable.playoutDelayHint = WEBRTC_TARGET_DELAY_MS / 1000;
+            } catch {
+                // Browser tanpa dukungan: pengawas di bawah tetap menjaga batas.
+            }
+        }
+      };
+
       const remote = new MediaStream();
       pc.addTransceiver("video", { direction: "recvonly" });
       pc.addTransceiver("audio", { direction: "recvonly" });
@@ -284,6 +366,70 @@ export default function CCTVPlayer({
       pc.ontrack = (event) => {
         remote.addTrack(event.track);
         video.srcObject = remote;
+        // Receiver baru lahir dengan batas playout bawaan browser; pasang
+        // batas kita sebelum ia mulai menumbuhkan buffernya sendiri.
+        capPlayoutDelay();
+      };
+
+      const restartForLatency = (delaySeconds: number) => {
+        stopWatching();
+
+        if (latencyReconnectsRef.current >= MAX_LATENCY_RECONNECTS) {
+            // Sudah dicoba dan tidak membaik. Menyambung ulang lagi hanya akan
+            // membuat player berkedip tanpa akhir, jadi berhenti di sini dan
+            // katakan apa adanya — sisa masalahnya bukan di browser.
+            console.warn(
+                `[CCTVPlayer] latensi ${delaySeconds.toFixed(1)}s bertahan setelah ` +
+                `${MAX_LATENCY_RECONNECTS} kali sambung ulang — kemungkinan timbunan di sisi kamera`
+            );
+            showNotice("Siaran tertinggal dari waktu nyata");
+            return;
+        }
+
+        latencyReconnectsRef.current += 1;
+        console.warn(`[CCTVPlayer] latensi WebRTC ${delaySeconds.toFixed(1)}s — menyambung ulang`);
+        setReconnectNonce((n) => n + 1);
+      };
+
+      const watchLatency = () => {
+        stopWatching();
+        let previous: LatencySample | null = null;
+        let breaches = 0;
+
+        statsTimer = setInterval(() => {
+            if (cancelled) return;
+
+            pc.getStats().then((report) => {
+                if (cancelled) return;
+
+                const sample = readLatencySample(report);
+                if (!sample) return;
+
+                const prior = previous;
+                previous = sample;
+                if (!prior) return;
+
+                // Selisih antar sampel, bukan rerata seumur sesi: yang terakhir
+                // itu bergerak terlalu lambat untuk dipakai sebagai alarm, dan
+                // akan menutupi lonjakan yang baru saja terjadi.
+                const emitted = sample.emitted - prior.emitted;
+                // Tidak ada frame keluar sama sekali berarti siaran macet, bukan
+                // tertinggal — itu urusan penanganan galat, bukan pengawas ini.
+                if (emitted <= 0) return;
+
+                const delaySeconds = (sample.delay - prior.delay) / emitted;
+                if (delaySeconds <= WEBRTC_MAX_DELAY_SECONDS) {
+                    breaches = 0;
+                    return;
+                }
+
+                // Dua pelanggaran berturut-turut. Satu sampel bisa saja hanya
+                // sendatan jaringan sesaat yang pulih sendiri; menyambung ulang
+                // karenanya justru merugikan.
+                breaches += 1;
+                if (breaches >= 2) restartForLatency(delaySeconds);
+            }).catch(() => undefined);
+        }, WEBRTC_STATS_INTERVAL_MS);
       };
 
       pc.onconnectionstatechange = () => {
@@ -291,12 +437,15 @@ export default function CCTVPlayer({
         if (pc.connectionState === "connected") {
             setLoading(false);
             setError(null);
+            capPlayoutDelay();
+            watchLatency();
             video.play().catch(() => {
                 video.muted = true;
                 setIsMuted(true);
                 video.play().catch(() => undefined);
             });
         } else if (pc.connectionState === "failed") {
+            stopWatching();
             fallbackToHls("Koneksi WebRTC gagal");
         }
       };
@@ -377,6 +526,12 @@ export default function CCTVPlayer({
           liveSyncDurationCount: 3,
           liveMaxLatencyDurationCount: 10,
           liveDurationInfinity: true,
+          // Mengejar ketertinggalan kecil dengan mempercepat pemutaran sedikit,
+          // bukan dengan melompat. Tanpa ini hls.js hanya punya satu alat —
+          // seek keras saat ambang maksimum terlampaui — sehingga playback
+          // boleh berkeliaran beberapa detik di belakang live edge tanpa
+          // dikoreksi sama sekali, dan setiap sendatan menambah jaraknya.
+          maxLiveSyncPlaybackRate: 1.5,
           maxBufferLength: 8,
           maxMaxBufferLength: 20,
           maxBufferSize: 20 * 1000 * 1000,
@@ -445,7 +600,28 @@ export default function CCTVPlayer({
             video.play().catch(() => undefined);
         });
         setLoading(false);
+
+        // Pemutar bawaan tidak mengekspos pengendali latensi apa pun, dan tidak
+        // punya kewajiban mengejar live edge: sekali tertinggal — biasanya
+        // setelah jaringan tersendat — ia akan terus memutar dari posisi lama
+        // sampai halaman dimuat ulang. Ini padanan seek berkala di jalur
+        // hls.js, hanya memakai `seekable` (ujung live menurut Safari) karena
+        // liveSyncPosition tidak ada di sini.
+        const nudgeNative = () => {
+            const live = video.seekable.length
+                ? video.seekable.end(video.seekable.length - 1)
+                : video.buffered.length
+                    ? video.buffered.end(video.buffered.length - 1)
+                    : null;
+            if (live !== null && live - video.currentTime > MAX_DRIFT_SECONDS) {
+                video.currentTime = live - 1;
+            }
+            if (video.paused) video.play().catch(() => undefined);
+        };
+
+        const driftTimer = setInterval(nudgeNative, 5000);
         teardown = () => {
+            clearInterval(driftTimer);
             video.removeAttribute("src");
             video.load();
         };
@@ -486,7 +662,7 @@ export default function CCTVPlayer({
       teardown();
       video.pause();
     };
-  }, [streamName, isPlaying, active, transport]);
+  }, [streamName, isPlaying, active, transport, reconnectNonce, showNotice]);
 
   useEffect(() => () => {
       if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
@@ -494,6 +670,10 @@ export default function CCTVPlayer({
   }, []);
 
   const handlePlay = () => {
+      // Jatah sambung-ulang otomatis dihitung per sesi tontonan, bukan per umur
+      // komponen. Kalau tidak, kartu yang sudah pernah menyerah pada latensi
+      // tidak akan pernah mencobanya lagi walau ditekan play berkali-kali.
+      latencyReconnectsRef.current = 0;
       setTransport(initialTransport);
       setIsPlaying(true);
   };
@@ -509,6 +689,7 @@ export default function CCTVPlayer({
 
   const handleRetry = (e: React.MouseEvent) => {
       e.stopPropagation();
+      latencyReconnectsRef.current = 0;
       setError(null);
       setLoading(true);
       setTransport(initialTransport);

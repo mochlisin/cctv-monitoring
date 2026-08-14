@@ -197,9 +197,83 @@ Ini di luar kode, tapi paling berpengaruh ke kualitas hasil:
 - **Substream H.264**, bukan H.265 — sebagian besar browser tidak bisa memutar
   H.265 lewat WebRTC.
 - Substream ~512×288 sampai 704×576, 10–15 fps, cap bitrate ~512 kbps.
+- **Untuk kamera HSE, jangan naikkan resolusi di atas substream.** Setiap frame
+  diperkecil ke `HSE_INPUT_SIZE` (480) sebelum masuk model, jadi resolusi di atas
+  itu tidak menambah satu piksel pun pada orangnya — hanya bandwidth dan beban
+  dekode. Penjelasan lengkapnya di [Akurasi HSE](#akurasi-hse-batas-nyata-di-2-core--2-gb).
+- **CBR, bukan VBR tanpa batas. Matikan H.264+ / Smart Codec / "Smart 264".**
+  Fitur itu menekan bitrate rata-rata dengan cara melonjakkannya saat ada
+  gerakan — dan lonjakan itulah yang membanjiri uplink kamera lalu memunculkan
+  keterlambatan hitungan menit yang dijelaskan di bawah.
 
 Isi kolom alamat kamera dengan **URL RTSP lengkap**, misalnya
 `rtsp://user:pass@10.5.41.18:554/h264/ch1/sub/av_stream`.
+
+### Kalau siaran telat hitungan menit
+
+Gejala khasnya: kadang realtime, tapi sering tertinggal 2–7 menit, dan makin
+lama makin jauh sampai koneksi kamera diputus dan disambung lagi.
+
+Latensi sebesar itu tidak mungkin berasal dari player atau dari HLS — jendela
+playlist LL-HLS hanya beberapa detik, dan player memaksa lompat ke live edge.
+Satu-satunya mekanisme yang sampai hitungan menit ada di **hulu**, antara kamera
+dan MediaMTX: **RTSP over TCP tidak pernah membuang apa pun.** Begitu uplink
+kamera lebih sempit dari bitrate-nya, frame menumpuk di buffer kirim kamera dan
+tetap dikirim seluruhnya — hanya terlambat. Timbunannya bertambah selama
+kekurangan bandwidth berlangsung, dan semua yang menonton melihat masa lalu.
+Tidak ada setelan player yang bisa memperbaikinya, karena datanya memang baru
+sampai sekarang.
+
+Pastikan dulu, jangan menebak. Baca RTSP lokal MediaMTX dan biarkan jalan
+minimal satu menit (`<slug>` ada di URL kamera):
+
+```bash
+ffmpeg -rtsp_transport tcp -i rtsp://127.0.0.1:8554/cctv_<slug> -an -f null -
+```
+
+Yang dibaca adalah **`speed=`** pada baris statistik — rasio waktu media
+terhadap waktu nyata. Sumber live seharusnya menetap di `1.00x`; data tidak bisa
+datang lebih cepat daripada kamera merekamnya. Beberapa detik pertama selalu di
+atas 1x (MediaMTX menyerahkan GOP yang sudah ada di tangannya), jadi tunggu
+angkanya turun dan stabil. Kalau ia **bertahan** di `2x`, `5x`, `20x`, artinya
+ada timbunan frame lama yang sedang dikuras — konfirmasi masalah hulu.
+
+Perbaikannya, berurutan dari yang paling berpengaruh:
+
+1. **`MEDIAMTX_RTSP_TRANSPORT=udp`** (atau `automatic`, bawaannya sekarang).
+   Dengan UDP, kelebihan data dibuang alih-alih diantrekan: latensi berhenti
+   tumbuh dan berganti menjadi artefak sesekali. Untuk pemantauan live, itu
+   pertukaran yang benar. Path yang sudah terdaftar ikut diperbarui otomatis
+   pada sinkronisasi berikutnya.
+2. **Turunkan bitrate/resolusi/fps kamera** sampai nyaman di bawah kapasitas
+   uplink-nya, dan pakai **substream**, bukan main stream.
+3. **Matikan H.264+ / Smart Codec / VBR tanpa cap** (lihat daftar di atas).
+
+Kalau `speed=` justru menetap di ≈1.00x tetapi siaran tetap telat, ada dua
+kemungkinan dan urutan memeriksanya penting, karena tes di atas mengukur **laju,
+bukan umur** — jalur yang antreannya sudah penuh dan mentok juga mengalir tepat
+1.00x, hanya saja terlambat konstan.
+
+1. **Pastikan umurnya dulu.** Nyalakan OSD tanggal/jam di kamera, ambil satu
+   frame, lalu bandingkan jam di dalam gambar dengan jam server:
+
+   ```bash
+   ffmpeg -rtsp_transport tcp -i rtsp://127.0.0.1:8554/cctv_<slug> -frames:v 1 -y /tmp/cek.jpg && date
+   ```
+
+   Selisih hitungan menit berarti masalahnya tetap di hulu — kembali ke tiga
+   perbaikan di atas.
+2. **Kalau frame itu segar tapi browser tetap telat**, timbunannya di hilir:
+   periksa `proxy_buffering` dan `proxy_cache` di nginx (harus mati untuk jalur
+   media), lalu pastikan WebRTC benar-benar terpakai — badge player menampilkan
+   `LIVE`, bukan `LIVE · HLS`. `LIVE · HLS` berarti UDP 8189 tidak bisa dijangkau
+   penonton dan semuanya jatuh ke fallback.
+
+Sejak masalah ini, player juga mengawasi latensinya sendiri: jalur WebRTC
+membatasi jitter buffer browser (~150 ms), memantau kedalamannya lewat
+`getStats()`, dan menyambung ulang kalau tertinggal lebih dari 1,2 detik —
+maksimal tiga kali, lalu berhenti dan menampilkan "Siaran tertinggal dari waktu
+nyata" alih-alih berkedip tanpa akhir untuk masalah yang bukan miliknya.
 
 ### 9. HSE monitoring (opsional)
 
@@ -208,6 +282,77 @@ pemakaian helm dan rompi, lanjutkan ke [HSE Monitoring →
 Produksi](#produksi-1) — ada satu service tambahan di Supervisor, satu berkas
 model, dan satu migrasi database. Melewatinya tidak merusak apa pun: halaman
 `/admin/hse` hanya akan menampilkan peringatan "worker tidak berjalan".
+
+### Akurasi HSE: batas nyata di 2 core / 2 GB
+
+Deteksi APD **tidak bisa** dan tidak akan pernah 100% akurat — juga tidak 99,8%.
+Bagian ini menjelaskan batasnya secara konkret, karena mengejar angka yang tidak
+ada justru memperburuk keselamatan: sistem yang mengklaim hampir sempurna membuat
+operator berhenti memeriksa sendiri.
+
+**Tiga batas yang tidak bisa dilewati kode:**
+
+1. **Piksel.** Pada `HSE_MIN_PERSON_HEIGHT=0.12`, orang yang lolos ambang minimal
+   ~58 px di ruang 480 px, sehingga helmnya hanya ~8-10 px. Tidak ada model yang
+   mencapai akurasi mendekati sempurna pada objek sebesar itu.
+2. **Oklusi.** Orang yang membelakangi kamera tidak punya rompi yang terlihat.
+   Sistem menjawab "tidak terbaca", dan itu jawaban yang benar. Menuntut putusan
+   untuk setiap orang berarti menuntut sistem menebak.
+3. **Ambiguitas yang tidak terpecahkan detektor objek.** Helm dipakai tanpa tali
+   terkancing, rompi dipakai terbuka, helm ditumpuk di atas topi — ketiganya
+   menghasilkan kotak yang identik. Dua petugas K3 yang melabeli frame yang sama
+   pun akan berbeda pendapat pada lebih dari 0,2% kasus, dan akurasi tidak bisa
+   melampaui kesepakatan antar-pelabel.
+
+**Menaikkan resolusi TIDAK membantu, dan di server ini malah merugikan.**
+Godaannya besar, jadi angkanya perlu ditulis: setiap frame diperkecil ke
+`HSE_INPUT_SIZE` (480) sebelum masuk model, jadi 480-lah batas atas seluruh
+sistem. Substream 512×288 sudah praktis mengisi batas itu; menaikkan kamera ke
+1080p tidak menambah piksel pada orangnya sama sekali. Menaikkan
+`HSE_INPUT_SIZE` ke 640 pun bukan jalan keluar — model harus diekspor ulang
+(graf ONNX berukuran tetap), inferensi jadi ~75% lebih lambat, rem otomatis
+melebarkan intervalnya sendiri, dan **yang turun adalah cakupan waktu**: lebih
+banyak detik yang tidak terlihat siapa pun. Untuk keselamatan itu pertukaran
+yang salah arah, dan sekarang bisa Anda buktikan sendiri di angka "Waktu
+terpantau" di dasbor.
+
+**Yang benar-benar menaikkan keselamatan di hardware ini:**
+
+- **Penempatan kamera.** Membuat orang lebih besar di dalam frame adalah
+  satu-satunya cara menambah piksel pada helm tanpa biaya CPU sama sekali.
+  Turunkan tinggi pemasangan, perkecil FOV, atau arahkan ke area kerja — bukan
+  ke seluruh halaman. Perhatikan angka **"Orang terlalu jauh untuk dinilai"** di
+  dasbor: itu ukuran langsung seberapa banyak yang terbuang karena sudut kamera.
+- **Pantau cakupan, bukan hanya kepatuhan.** Lihat di bawah.
+- **`hseMinDuration` per kamera** sebagai pengatur presisi alarm. Menaikkannya
+  mengurangi alarm palsu; menurunkannya menangkap lebih banyak. Alarm palsu yang
+  terlalu banyak juga kegagalan keselamatan — operator berhenti menanggapi.
+
+### Kepatuhan tanpa cakupan itu menyesatkan
+
+"0 pelanggaran" pada kamera yang tidak melihat apa pun tampak **identik** dengan
+lokasi yang benar-benar patuh. Dasbor karena itu tidak pernah menampilkan angka
+kepatuhan sendirian:
+
+- **Waktu terpantau** — detik yang benar-benar terwakili analisis dibanding
+  panjang rentangnya. Di bawah 80% berarti ada lubang waktu yang cukup besar
+  untuk menyembunyikan pelanggaran sepenuhnya.
+- **Panel "Yang tidak terlihat sistem"** — orang yang terlalu jauh untuk dinilai,
+  APD yang tertutup, dan porsi frame inframerah (malam hari, deteksi lebih lemah).
+- **Tiga alarm kamera yang berbeda**, karena ketiganya menghasilkan gejala yang
+  sama di layar — nol pelanggaran: tidak ada sinyal, mengaku hidup tapi frame
+  berhenti masuk, dan dinyalakan di database tapi tidak dipantau worker (lewat
+  `HSE_MAX_CAMERAS`).
+
+Bentuk yang bisa dipertanggungjawabkan adalah **"92% patuh dari 71% waktu
+terpantau"**, bukan "92% patuh". Kalau laporan ini dipakai sebagai bukti
+kepatuhan, kalimat pertama yang bertahan diperiksa.
+
+Terakhir, dan ini bukan formalitas: **sistem ini tidak boleh menjadi kontrol
+keselamatan tunggal.** Kamera bisa mati, pandangan bisa terhalang, pekerja bisa
+keluar frame. Sebagai lapisan tambahan yang jujur soal cakupannya, nilainya
+tinggi; sebagai satu-satunya penjaga, rancangannya rapuh terlepas dari sebagus
+apa modelnya.
 
 ---
 

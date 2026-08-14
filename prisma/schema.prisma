@@ -266,6 +266,41 @@ model HseBucket {
   vestOk        Int @default(0)
   vestMissing   Int @default(0)
 
+  // ------------------------------------------------------------------
+  // Yang TIDAK terlihat sistem. Kolom-kolom di bawah ada karena alasan
+  // keselamatan, bukan kelengkapan statistik.
+  //
+  // Angka kepatuhan tanpa angka cakupan berbahaya: "0 pelanggaran" pada kamera
+  // yang tidak melihat apa pun tampak identik dengan lokasi yang benar-benar
+  // patuh. Yang di bawah ini membuat perbedaannya bisa dilaporkan.
+  // ------------------------------------------------------------------
+
+  /// Orang yang terdeteksi tapi dibuang karena di bawah HSE_MIN_PERSON_HEIGHT.
+  /// Bukan pelanggaran dan bukan kepatuhan — sekadar terlalu jauh untuk dinilai.
+  /// Angka ini besar berarti sudut atau resolusi kameranya yang perlu dibenahi,
+  /// bukan modelnya.
+  tooSmall      Int @default(0)
+
+  /// APD yang tidak dapat dinilai: kepala tertutup tiang, orang membelakangi
+  /// kamera. Sengaja dipisah dari Ok/Missing — menghitungnya sebagai patuh
+  /// menyembunyikan pelanggaran, menghitungnya sebagai pelanggaran membanjiri
+  /// operator dengan alarm palsu.
+  helmetUnknown Int @default(0)
+  vestUnknown   Int @default(0)
+
+  /// Frame yang praktis tanpa warna (kamera dalam mode inframerah malam hari).
+  /// Pada frame ini warna APD tidak dibaca dan kualitas deteksi menurun, jadi
+  /// porsinya harus ikut terlihat saat angka kepatuhan dibaca.
+  monoFrames    Int @default(0)
+
+  /// Detik yang benar-benar terwakili analisis pada selang ini.
+  ///
+  /// Tiap analisis mewakili satu interval penjadwal (yang ikut melebar sendiri
+  /// saat CPU sibuk, lihat adapt() di worker), jadi jumlahnya adalah lama waktu
+  /// yang sungguh terpantau. Dibandingkan dengan panjang selang, inilah
+  /// persentase cakupan — pembeda antara "patuh" dan "tidak sedang dilihat".
+  coveredSeconds Int @default(0)
+
   /// Sebaran warna APD pada selang ini, bentuk sama dengan HseEvent.colors.
   colors Json?
 

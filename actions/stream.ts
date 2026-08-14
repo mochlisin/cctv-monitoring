@@ -26,6 +26,42 @@ const API_BASE = process.env.MEDIAMTX_API_URL ?? "http://127.0.0.1:9997";
 const CLOSE_AFTER = process.env.MEDIAMTX_CLOSE_AFTER ?? "10s";
 const REQUEST_TIMEOUT_MS = 5000;
 
+/**
+ * Transport RTSP saat MediaMTX menarik dari kamera.
+ *
+ * Ini setelan paling berpengaruh terhadap latensi di seluruh berkas ini, dan
+ * arahnya berlawanan dengan dugaan biasa. TCP terdengar lebih "aman", tapi TCP
+ * tidak pernah membuang apa pun: kalau uplink kamera lebih sempit dari
+ * bitrate-nya walau sebentar, frame menumpuk di buffer kirim kamera dan tetap
+ * dikirim seluruhnya — hanya terlambat, dan keterlambatannya menumpuk tanpa
+ * batas sampai hitungan menit. Penonton melihat masa lalu, dan tidak ada
+ * setelan player yang bisa memperbaikinya karena datanya memang baru sampai.
+ *
+ * Dengan UDP, kelebihan data DIBUANG. Latensi berhenti tumbuh dan berganti
+ * menjadi artefak sesekali — pertukaran yang benar untuk pemantauan live.
+ *
+ * `automatic` (bawaan MediaMTX: UDP dulu, jatuh ke TCP) dipilih sebagai default
+ * di sini karena aman untuk kamera LAN maupun kamera di balik NAT yang memang
+ * hanya bisa TCP. Paksa `udp` kalau semua kamera ada di LAN, atau `tcp` kalau
+ * jaringannya memblokir UDP dan Anda menerima konsekuensi di atas.
+ */
+const RTSP_TRANSPORTS = ["automatic", "udp", "multicast", "tcp"] as const;
+type RtspTransport = (typeof RTSP_TRANSPORTS)[number];
+
+function rtspTransport(): RtspTransport {
+    const configured = (process.env.MEDIAMTX_RTSP_TRANSPORT ?? "").trim().toLowerCase();
+    if ((RTSP_TRANSPORTS as readonly string[]).includes(configured)) {
+        return configured as RtspTransport;
+    }
+    if (configured) {
+        console.warn(
+            `[stream] MEDIAMTX_RTSP_TRANSPORT="${configured}" tidak dikenal; ` +
+            `memakai "automatic". Pilihan: ${RTSP_TRANSPORTS.join(", ")}`
+        );
+    }
+    return "automatic";
+}
+
 export type StreamPathStatus = {
     id: number;
     slug: string;
@@ -88,8 +124,32 @@ function desiredConf(source: string): MediamtxPathConf {
         // Kamera baru dihubungi saat ada penonton, dan diputus lagi setelah sepi.
         sourceOnDemand: true,
         sourceOnDemandCloseAfter: CLOSE_AFTER,
-        rtspTransport: "tcp",
+        rtspTransport: rtspTransport(),
     };
+}
+
+/**
+ * Apakah path yang sudah ada di MediaMTX perlu ditulis ulang?
+ *
+ * Transport ikut dibandingkan, bukan hanya source. Tanpa itu, mengubah
+ * MEDIAMTX_RTSP_TRANSPORT tidak akan pernah berpengaruh pada kamera yang sudah
+ * terdaftar — path lama bertahan dengan transport lamanya sampai kamera dihapus
+ * dan dibuat ulang, dan gejalanya adalah "sudah diganti ke UDP tapi tetap
+ * telat".
+ *
+ * Sengaja hanya membandingkan dua medan bertipe string apa adanya. Medan durasi
+ * seperti sourceOnDemandCloseAfter tidak ikut: MediaMTX menormalkan format
+ * durasi saat menyimpan, sehingga "10s" yang kita kirim bisa kembali dalam
+ * bentuk lain — dan perbandingan yang selalu gagal berarti PATCH tiap kali
+ * sinkronisasi berjalan, yang memuat ulang path dan memutus siaran tiap 60
+ * detik. Diam-diam, dan hanya di produksi.
+ */
+function needsUpdate(current: MediamtxPathConf, source: string): boolean {
+    const desired = desiredConf(source);
+    return (
+        current.source !== desired.source ||
+        current.rtspTransport !== desired.rtspTransport
+    );
 }
 
 /**
@@ -132,7 +192,7 @@ export async function syncStreamPaths(): Promise<{ synced: number; removed: numb
         if (!current) {
             await mediamtx("POST", `/v3/config/paths/add/${name}`, desiredConf(source));
             synced++;
-        } else if (current.source !== source) {
+        } else if (needsUpdate(current, source)) {
             await mediamtx("PATCH", `/v3/config/paths/patch/${name}`, desiredConf(source));
             synced++;
         }

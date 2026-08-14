@@ -118,10 +118,25 @@ export function parseHseColors(value: unknown): HseColors {
 
 /* ---------------------------------------------------------------- data live */
 
+/** Kotak [x, y, w, h] ternormalisasi 0..1 terhadap frame asli kamera. */
+export type HseBox = [number, number, number, number];
+
 /** Satu orang pada frame terakhir yang dianalisis. */
 export type HsePerson = {
-    /** [x, y, w, h] ternormalisasi 0..1 terhadap frame asli kamera. */
-    box: [number, number, number, number];
+    /** Kotak orang, dari kepala sampai kaki. */
+    box: HseBox;
+    /**
+     * Kotak APD yang menghasilkan keputusan di bawah — dipakai overlay untuk
+     * menunjuk tepat ke helm dan rompinya.
+     *
+     * Artinya bergantung pada status di sebelahnya, dan ini mudah salah dibaca:
+     * saat `helmet === false`, `helmetBox` adalah kotak KEPALA TELANJANG, bukan
+     * kotak helm yang ada. Begitu pula `vestBox` saat `vest === false`. Kotak
+     * bernilai null saat statusnya null — tidak ada yang bisa digambar untuk
+     * APD yang memang tidak terbaca.
+     */
+    helmetBox: HseBox | null;
+    vestBox: HseBox | null;
     /** true = terdeteksi dipakai, false = terdeteksi tidak dipakai, null = tak terbaca. */
     helmet: boolean | null;
     vest: boolean | null;
@@ -130,6 +145,13 @@ export type HsePerson = {
     confidence: number;
     /** Melanggar aturan kamera ini (memperhitungkan hseRequireHelm/Vest). */
     violating: boolean;
+    /**
+     * Kotak orangnya dikarang dari kotak kepala, bukan dideteksi — terjadi pada
+     * model tanpa kelas Person. Tingginya 6x kotak kepala, angka yang hanya
+     * pantas digambar sebagai perkiraan; overlay menandainya putus-putus supaya
+     * tidak dibaca sebagai pengukuran.
+     */
+    inferred: boolean;
 };
 
 /** Payload yang dikirim worker ke overlay lewat SSE. */

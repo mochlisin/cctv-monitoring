@@ -48,19 +48,31 @@ const person = det(ROLE.PERSON, [200, 100, 280, 400]);
 console.log("\n== asosiasi APD ke orang ==");
 {
     // Helm di kepala (y 95..130, dalam 38% teratas = sampai y=214)
-    const r = assessFrame([person, det(ROLE.HELMET, [215, 95, 265, 130])], blank, SIZE, rules);
+    const helmet = det(ROLE.HELMET, [215, 95, 265, 130]);
+    const r = assessFrame([person, helmet], blank, SIZE, rules);
     eq("helm di kepala -> dipakai", [r.persons[0].helmet, r.tally.helmetOk], [true, 1]);
     eq("rompi tak terlihat -> null, bukan pelanggaran", [r.persons[0].vest, r.persons[0].violating], [null, false]);
+    // Overlay menggambar kotak ini, jadi ia harus kotak deteksi yang benar-benar
+    // dipakai memutuskan — bukan hasil perhitungan ulang dari zona kepala.
+    eq("  helmetBox = kotak deteksinya", r.persons[0].helmetBox, helmet.box);
+    eq("  vestBox null saat rompi tak terbaca", r.persons[0].vestBox, null);
 }
 {
     // Helm dijinjing setinggi pinggang (y 300..335) — di luar zona kepala
     const r = assessFrame([person, det(ROLE.HELMET, [215, 300, 265, 335])], blank, SIZE, rules);
     eq("helm dijinjing -> TIDAK dihitung dipakai", r.persons[0].helmet, null);
     eq("  dan tidak masuk helmetOk", r.tally.helmetOk, 0);
+    // Kotak yang tidak diberikan ke siapa pun tidak boleh sampai ke overlay:
+    // menggambarnya akan menandai helm yang dijinjing sebagai helm yang dipakai.
+    eq("  helmetBox null -> tidak digambar", r.persons[0].helmetBox, null);
 }
 {
-    const r = assessFrame([person, det(ROLE.NO_HELMET, [215, 95, 265, 130])], blank, SIZE, rules);
+    const bareHead = det(ROLE.NO_HELMET, [215, 95, 265, 130]);
+    const r = assessFrame([person, bareHead], blank, SIZE, rules);
     eq("kepala telanjang -> pelanggaran", [r.persons[0].helmet, r.persons[0].violating, r.violationType], [false, true, "NO_HELMET"]);
+    // helmetBox saat helmet === false berarti kepala telanjang, dan justru itu
+    // yang perlu digambar merah supaya penanda menunjuk ke kepalanya.
+    eq("  helmetBox = kotak kepala telanjang", r.persons[0].helmetBox, bareHead.box);
 }
 {
     const r = assessFrame([
@@ -88,6 +100,41 @@ console.log("\n== asosiasi APD ke orang ==");
     const tiny = det(ROLE.PERSON, [10, 10, 30, 50]);
     const r = assessFrame([tiny, det(ROLE.NO_HELMET, [12, 8, 28, 20])], blank, SIZE, rules);
     eq("orang terlalu kecil -> tidak dihitung", r.tally.personCount, 0);
+    // Tapi HARUS tercatat sebagai blind spot. Sebelumnya orang ini hilang tanpa
+    // jejak, sehingga area jauh dari kamera dilaporkan "tidak ada pelanggaran"
+    // padahal yang sebenarnya terjadi adalah "tidak terlihat".
+    eq("  dan tercatat sebagai tooSmall", r.tally.tooSmall, 1);
+}
+
+console.log("\n== blind spot: yang tidak terlihat sistem ==");
+{
+    const r = assessFrame([person], blank, SIZE, rules);
+    eq(
+        "tak ada APD terdeteksi -> unknown, bukan ok/missing",
+        [r.tally.helmetUnknown, r.tally.vestUnknown, r.tally.helmetOk, r.tally.helmetMissing],
+        [1, 1, 0, 0]
+    );
+    eq("  dan bukan pelanggaran", r.violationType, null);
+}
+{
+    // Helm terbaca, rompi tertutup: hanya rompinya yang unknown.
+    const r = assessFrame([person, det(ROLE.HELMET, [215, 95, 265, 130])], blank, SIZE, rules);
+    eq("sebagian terbaca -> unknown hanya yang tertutup", [r.tally.helmetUnknown, r.tally.vestUnknown], [0, 1]);
+}
+{
+    // Semua orang terdeteksi tapi tidak ada yang lolos ambang ukuran: jalur
+    // cadangan TIDAK boleh jalan, dan seluruhnya harus terhitung tooSmall.
+    const a = det(ROLE.PERSON, [10, 10, 30, 50]);
+    const b = det(ROLE.PERSON, [40, 10, 60, 50]);
+    const r = assessFrame([a, b], blank, SIZE, rules);
+    eq("semua orang terlalu kecil -> tooSmall menghitung semuanya", [r.tally.personCount, r.tally.tooSmall], [0, 2]);
+}
+{
+    // Orang tiruan dari kepala yang juga terlalu kecil harus ikut terhitung —
+    // jalur cadangan punya saringan ukurannya sendiri, dan dulu buangannya
+    // tidak dilaporkan ke mana pun.
+    const r = assessFrame([det(ROLE.NO_HELMET, [200, 100, 206, 104])], blank, SIZE, rules);
+    eq("kepala tiruan terlalu kecil -> tooSmall", [r.tally.personCount, r.tally.tooSmall], [0, 1]);
 }
 {
     // Aturan per kamera: area hanya wajib rompi
@@ -97,8 +144,14 @@ console.log("\n== asosiasi APD ke orang ==");
 }
 {
     // Model tanpa kelas Person (SHWD): kepala telanjang saja
-    const r = assessFrame([det(ROLE.NO_HELMET, [200, 100, 260, 160])], blank, SIZE, rules);
+    const head = det(ROLE.NO_HELMET, [200, 100, 260, 160]);
+    const r = assessFrame([head], blank, SIZE, rules);
     eq("tanpa kelas Person -> orang disimpulkan dari kepala", [r.tally.personCount, r.violationType], [1, "NO_HELMET"]);
+    // Kotak orangnya tebakan geometri (tinggi 6x kepala). Flag ini harus terbawa
+    // sampai overlay, yang menggambarnya putus-putus — kotak solid akan
+    // mengklaim ketepatan yang tidak dimiliki angka itu.
+    eq("  ditandai inferred", r.persons[0].inferred, true);
+    eq("  helmetBox tetap kotak kepala aslinya", r.persons[0].helmetBox, head.box);
 }
 
 console.log("\n== warna ==");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { HseLiveFrame, HsePerson } from "@/lib/hse";
+import { HSE_COLOR_HEX, type HseBox, type HseLiveFrame } from "@/lib/hse";
 
 /**
  * Kotak deteksi APD di atas video.
@@ -50,15 +50,79 @@ function contentRect(video: HTMLVideoElement) {
     return { left: (boxW - width) / 2, top: (boxH - height) / 2, width, height };
 }
 
-function personLabel(person: HsePerson): string {
-    const parts: string[] = [];
-    if (person.helmet === false) parts.push("tanpa helm");
-    else if (person.helmet === true) parts.push(person.helmetColor ? `helm ${person.helmetColor}` : "helm");
+type ContentRect = NonNullable<ReturnType<typeof contentRect>>;
 
-    if (person.vest === false) parts.push("tanpa rompi");
-    else if (person.vest === true) parts.push(person.vestColor ? `rompi ${person.vestColor}` : "rompi");
+/**
+ * Teks satu penanda APD.
+ *
+ * Tiga keadaan yang sebelumnya tertulis sama persis ("helm") dan karenanya tidak
+ * bisa dibedakan operator: dipakai dengan warna terbaca, dipakai tapi warnanya
+ * tidak menonjol, dan terdeteksi tidak dipakai. Yang kedua bukan kegagalan —
+ * pada helm berukuran belasan piksel, `confidentColor` menolak menebak — tapi
+ * menyembunyikannya membuat fitur warna terlihat seperti tidak berfungsi.
+ */
+function apdLabel(kind: "helm" | "rompi", worn: boolean, color: string | null): string {
+    if (!worn) return kind === "helm" ? "TANPA HELM" : "TANPA ROMPI";
+    return color ? `${kind} ${color}` : `${kind} · warna tak terbaca`;
+}
 
-    return parts.length ? parts.join(" · ") : "APD tidak terbaca";
+/**
+ * Kotak pada satu APD, bukan pada orangnya.
+ *
+ * Inilah penanda utama overlay: kotak orang hanya konteks. Menggambar keduanya
+ * dengan bobot yang sama membuat mata tidak tahu mana yang dinilai.
+ */
+function ApdMarker({
+    box,
+    rect,
+    kind,
+    worn,
+    color,
+    faded,
+}: {
+    box: HseBox;
+    rect: ContentRect;
+    kind: "helm" | "rompi";
+    worn: boolean;
+    color: string | null;
+    faded: boolean;
+}) {
+    const [x, y, w, h] = box;
+    const swatch = worn && color ? HSE_COLOR_HEX[color] : undefined;
+
+    return (
+        <div
+            className={`absolute border-2 rounded transition-opacity duration-500 ${
+                worn
+                    ? "border-emerald-400 shadow-[0_0_0_1px_rgba(0,0,0,0.55)]"
+                    : "border-red-500 shadow-[0_0_0_1px_rgba(0,0,0,0.55)]"
+            }`}
+            style={{
+                left: rect.left + x * rect.width,
+                top: rect.top + y * rect.height,
+                width: w * rect.width,
+                height: h * rect.height,
+                opacity: faded ? 0.35 : 1,
+            }}
+        >
+            {/* Label sengaja dibiarkan melimpah keluar kotak. Kotak helm sering
+                hanya belasan piksel di layar, jadi memaksa teks masuk ke dalamnya
+                hanya menghasilkan label yang tidak terbaca. */}
+            <span
+                className={`absolute -top-4.5 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${
+                    worn ? "bg-emerald-500 text-white" : "bg-red-500 text-white"
+                }`}
+            >
+                {swatch && (
+                    <span
+                        className="w-2 h-2 rounded-full ring-1 ring-white/70 shrink-0"
+                        style={{ backgroundColor: swatch }}
+                    />
+                )}
+                {apdLabel(kind, worn, color)}
+            </span>
+        </div>
+    );
 }
 
 export default function HSEOverlay({ slug, videoRef, active, zoom = 1 }: Props) {
@@ -69,6 +133,21 @@ export default function HSEOverlay({ slug, videoRef, active, zoom = 1 }: Props) 
     // murni, dan Date.now() di dalamnya menghasilkan umur yang berubah setiap
     // kali komponen kebetulan dirender ulang karena sebab lain.
     const [now, setNow] = useState<number | null>(null);
+    /**
+     * Selisih jam browser terhadap jam server.
+     *
+     * `frame.at` dicap oleh worker memakai jam SERVER, sementara umur dihitung
+     * dengan jam BROWSER. Tanpa koreksi, penonton yang jamnya maju lebih dari
+     * EXPIRE_AFTER_MS membuat setiap frame terlihat kedaluwarsa begitu tiba —
+     * overlay kosong selamanya, sementara snapshot yang ditulis server-side tetap
+     * sempurna. Gejala itu menyesatkan justru karena separuh sistemnya benar.
+     *
+     * Yang dipakai adalah selisih TERKECIL yang pernah teramati, bukan yang
+     * pertama: sampel pertama bisa kebetulan diambil saat worker sedang tersendat
+     * dan frame-nya memang sudah tua, dan mengunci angka itu akan membuat semua
+     * frame berikutnya terlihat lebih segar daripada kenyataan.
+     */
+    const [clockOffset, setClockOffset] = useState<number | null>(null);
 
     // Frame terakhir sengaja tidak dibuang saat player berhenti. Kalau player
     // menyala lagi dalam beberapa detik, analisis itu memang masih berlaku; dan
@@ -82,8 +161,13 @@ export default function HSEOverlay({ slug, videoRef, active, zoom = 1 }: Props) 
 
         source.addEventListener("frame", (event) => {
             try {
-                setFrame(JSON.parse((event as MessageEvent).data));
+                const parsed: HseLiveFrame = JSON.parse((event as MessageEvent).data);
+                setFrame(parsed);
                 setOffline(null);
+                setClockOffset((prev) => {
+                    const sample = Date.now() - parsed.at;
+                    return prev === null ? sample : Math.min(prev, sample);
+                });
             } catch {
                 /* payload rusak — abaikan, frame berikutnya menyusul */
             }
@@ -122,10 +206,18 @@ export default function HSEOverlay({ slug, videoRef, active, zoom = 1 }: Props) 
         const observer = new ResizeObserver(update);
         observer.observe(video);
         video.addEventListener("loadedmetadata", update);
+        // ResizeObserver hanya memantau kotak ELEMEN; event `resize` pada elemen
+        // video adalah satu-satunya yang menandai perubahan ukuran INTRINSIK.
+        // Bedanya menentukan pada WebRTC: srcObject bisa mendapat dimensi setelah
+        // loadedmetadata, dan saat itu ukuran elemennya tidak berubah sama sekali
+        // — contentRect tetap null, dan tanpa rect tidak ada satu kotak pun yang
+        // digambar.
+        video.addEventListener("resize", update);
 
         return () => {
             observer.disconnect();
             video.removeEventListener("loadedmetadata", update);
+            video.removeEventListener("resize", update);
         };
     }, [videoRef, active, frame]);
 
@@ -139,8 +231,13 @@ export default function HSEOverlay({ slug, videoRef, active, zoom = 1 }: Props) 
 
     // Sebelum detak pertama, umur dianggap nol — frame yang baru saja tiba
     // tidak boleh terlihat basi hanya karena jamnya belum berdetak.
-    const ageMs = !frame ? Infinity : now === null ? 0 : Math.max(0, now - frame.at);
-    const persons = frame && ageMs < EXPIRE_AFTER_MS ? frame.persons : [];
+    const ageMs = !frame
+        ? Infinity
+        : now === null
+          ? 0
+          : Math.max(0, now - frame.at - (clockOffset ?? 0));
+    const expired = ageMs >= EXPIRE_AFTER_MS;
+    const persons = frame && !expired ? frame.persons : [];
     const stale = ageMs > STALE_AFTER_MS;
 
     return (
@@ -151,30 +248,63 @@ export default function HSEOverlay({ slug, videoRef, active, zoom = 1 }: Props) 
             {rect &&
                 persons.map((person, index) => {
                     const [x, y, w, h] = person.box;
-                    const violating = person.violating;
+                    // Tidak satu pun APD terbaca: kotak orang jadi satu-satunya
+                    // yang bisa digambar, jadi ia yang membawa keterangannya.
+                    const nothingRead = !person.helmetBox && !person.vestBox;
+
                     return (
-                        <div
-                            key={index}
-                            className={`absolute border-2 rounded-sm transition-opacity duration-500 ${
-                                violating
-                                    ? "border-red-500 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
-                                    : "border-emerald-400/80"
-                            }`}
-                            style={{
-                                left: rect.left + x * rect.width,
-                                top: rect.top + y * rect.height,
-                                width: w * rect.width,
-                                height: h * rect.height,
-                                opacity: stale ? 0.35 : 1,
-                            }}
-                        >
-                            <span
-                                className={`absolute -top-4.5 left-0 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${
-                                    violating ? "bg-red-500 text-white" : "bg-emerald-500 text-white"
+                        <div key={index}>
+                            {/* Kotak orang — konteks, bukan penanda utama. Tipis
+                                dan pudar supaya kotak APD yang menonjol. */}
+                            <div
+                                className={`absolute rounded-sm transition-opacity duration-500 ${
+                                    person.inferred
+                                        ? "border border-dashed border-slate-300/70"
+                                        : "border border-white/45"
                                 }`}
+                                style={{
+                                    left: rect.left + x * rect.width,
+                                    top: rect.top + y * rect.height,
+                                    width: w * rect.width,
+                                    height: h * rect.height,
+                                    opacity: stale ? 0.3 : 0.75,
+                                }}
                             >
-                                {personLabel(person)}
-                            </span>
+                                {(nothingRead || person.inferred) && (
+                                    <span className="absolute -top-4.5 left-0 px-1.5 py-0.5 rounded bg-slate-800/85 text-[10px] font-bold text-slate-200 whitespace-nowrap">
+                                        {person.inferred
+                                            ? nothingRead
+                                                ? "posisi perkiraan · APD tak terbaca"
+                                                : "posisi perkiraan"
+                                            : "APD tidak terbaca"}
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* Kotak helm. Saat helmet === false, kotak ini adalah
+                                kepala telanjang — dan menunjuk tepat ke sana jauh
+                                lebih berguna daripada kotak merah keliling tubuh. */}
+                            {person.helmetBox && person.helmet !== null && (
+                                <ApdMarker
+                                    box={person.helmetBox}
+                                    rect={rect}
+                                    kind="helm"
+                                    worn={person.helmet}
+                                    color={person.helmetColor}
+                                    faded={stale}
+                                />
+                            )}
+
+                            {person.vestBox && person.vest !== null && (
+                                <ApdMarker
+                                    box={person.vestBox}
+                                    rect={rect}
+                                    kind="rompi"
+                                    worn={person.vest}
+                                    color={person.vestColor}
+                                    faded={stale}
+                                />
+                            )}
                         </div>
                     );
                 })}
@@ -189,18 +319,29 @@ export default function HSEOverlay({ slug, videoRef, active, zoom = 1 }: Props) 
                     </span>
                 ) : frame ? (
                     <>
+                        {/* Ringkasan harus ikut kedaluwarsa bersama kotaknya.
+                            Sebelumnya angka ini tetap tampil setelah kotaknya
+                            dibuang, sehingga badge "3 orang · APD lengkap"
+                            berdampingan dengan video tanpa kotak sama sekali —
+                            lebih buruk daripada tidak menampilkan apa pun, karena
+                            operator menyimpulkan "aman" dari overlay yang sudah
+                            mati. */}
                         <span
                             className={`px-2 py-1 rounded-full border text-[10px] font-black tracking-widest uppercase ${
-                                frame.violatorCount > 0
-                                    ? "bg-red-500 border-red-400 text-white"
-                                    : "bg-emerald-600/90 border-emerald-400 text-white"
+                                expired
+                                    ? "bg-slate-800/90 border-slate-600 text-slate-300"
+                                    : frame.violatorCount > 0
+                                      ? "bg-red-500 border-red-400 text-white"
+                                      : "bg-emerald-600/90 border-emerald-400 text-white"
                             }`}
                         >
-                            {frame.violatorCount > 0
-                                ? `${frame.violatorCount} pelanggaran`
-                                : frame.personCount > 0
-                                  ? `${frame.personCount} orang · APD lengkap`
-                                  : "tidak ada orang"}
+                            {expired
+                                ? "analisis kedaluwarsa"
+                                : frame.violatorCount > 0
+                                  ? `${frame.violatorCount} pelanggaran`
+                                  : frame.personCount > 0
+                                    ? `${frame.personCount} orang · APD lengkap`
+                                    : "tidak ada orang"}
                         </span>
                         <span className="px-2 py-0.5 rounded-full bg-black/70 text-[9px] font-semibold text-slate-300 tabular-nums">
                             analisis {ageMs < 1000 ? "baru saja" : `${Math.round(ageMs / 1000)} dtk lalu`}

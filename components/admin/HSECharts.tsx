@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, HardHat, Shirt, Activity, WifiOff } from "lucide-react";
+import { AlertTriangle, CheckCircle2, HardHat, Shirt, Eye, EyeOff, WifiOff } from "lucide-react";
 import type { HseSummary, HseWorkerHealth } from "@/actions/hse";
 import { HSE_COLOR_HEX, complianceRate } from "@/lib/hse";
 
@@ -351,9 +351,20 @@ function ColorTally({ colors }: { colors: HseSummary["colors"] }) {
  */
 function WorkerBanner({ health }: { health: HseWorkerHealth }) {
     if (health.ok) {
+        // Tiga kegagalan berbeda, dan ketiganya menghasilkan gejala yang sama di
+        // layar — nol pelanggaran — jadi ketiganya harus disebut terpisah:
+        // tidak ada sinyal sama sekali, mengaku hidup tapi frame-nya basi, dan
+        // dinyalakan di database tapi tidak dipantau siapa pun.
         const offline = health.cameras?.filter((c) => !c.online) ?? [];
+        const stale = health.cameras?.filter((c) => c.online && c.stale) ?? [];
+        const unmonitored = health.unmonitored ?? [];
+        const blind = offline.length + stale.length + unmonitored.length;
+
         return (
-            <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+            <div
+                className="rounded-2xl border bg-white px-5 py-3 flex flex-wrap items-center gap-x-6 gap-y-2"
+                style={blind > 0 ? { borderColor: CRITICAL } : { borderColor: "#e2e8f0" }}
+            >
                 <span className="inline-flex items-center gap-2 text-xs font-bold" style={{ color: GOOD }}>
                     <CheckCircle2 className="w-4 h-4" />
                     Worker HSE berjalan
@@ -362,6 +373,7 @@ function WorkerBanner({ health }: { health: HseWorkerHealth }) {
                     {health.cameras?.length ?? 0} kamera · inferensi ~{health.averageInferenceMs} ms ·
                     interval {health.intervalSeconds} dtk
                 </span>
+
                 {offline.length > 0 && (
                     <span
                         className="inline-flex items-center gap-1.5 text-[11px] font-semibold"
@@ -369,6 +381,33 @@ function WorkerBanner({ health }: { health: HseWorkerHealth }) {
                     >
                         <WifiOff className="w-3.5 h-3.5" />
                         Tidak ada sinyal: {offline.map((c) => c.name).join(", ")}
+                    </span>
+                )}
+
+                {stale.length > 0 && (
+                    <span
+                        className="inline-flex items-center gap-1.5 text-[11px] font-semibold"
+                        style={{ color: CRITICAL }}
+                    >
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Frame berhenti masuk: {stale.map((c) => c.name).join(", ")}
+                    </span>
+                )}
+
+                {unmonitored.length > 0 && (
+                    <span
+                        className="inline-flex items-center gap-1.5 text-[11px] font-semibold"
+                        style={{ color: CRITICAL }}
+                    >
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Dinyalakan tapi tidak dipantau: {unmonitored.map((c) => c.name).join(", ")}
+                    </span>
+                )}
+
+                {blind > 0 && (
+                    <span className="text-[11px] text-slate-600 basis-full">
+                        Untuk kamera di atas, <strong>nol pelanggaran tidak berarti aman</strong> —
+                        tidak ada yang menganalisisnya.
                     </span>
                 )}
             </div>
@@ -398,6 +437,93 @@ function WorkerBanner({ health }: { health: HseWorkerHealth }) {
     );
 }
 
+/**
+ * Apa yang TIDAK terlihat sistem.
+ *
+ * Panel ini ada karena alasan keselamatan, bukan kelengkapan. Angka kepatuhan
+ * sendirian menyesatkan: "0 pelanggaran" pada kamera yang tidak melihat apa pun
+ * tampak identik dengan lokasi yang benar-benar patuh. Yang di bawah ini adalah
+ * satu-satunya cara operator bisa membedakannya — dan tiap baris menunjuk ke
+ * tindakan yang berbeda, jadi tidak digabung jadi satu angka mutu.
+ */
+function BlindSpots({
+    coverage,
+    days,
+    helmetRate,
+}: {
+    coverage: HseSummary["coverage"];
+    days: number;
+    helmetRate: number | null;
+}) {
+    const monoShare =
+        coverage.monoFrames > 0 && coverage.framesTotal > 0
+            ? Math.round((coverage.monoFrames / coverage.framesTotal) * 100)
+            : 0;
+
+    const rows = [
+        {
+            show: coverage.percent !== null && coverage.percent < 100,
+            label: "Waktu tidak terpantau",
+            value: coverage.percent === null ? "—" : `${Math.round((100 - coverage.percent) * 10) / 10}%`,
+            why: `Dari ${days} hari terakhir. Lubang waktu berasal dari kamera mati, worker berhenti, atau interval yang melebar sendiri karena CPU sibuk.`,
+        },
+        {
+            show: coverage.tooSmall > 0,
+            label: "Orang terlalu jauh untuk dinilai",
+            value: coverage.tooSmall.toLocaleString("id-ID"),
+            why: "Terlihat model tapi di bawah ambang ukuran, jadi tidak dihitung patuh maupun melanggar. Angka besar berarti sudut atau resolusi kameranya, bukan modelnya.",
+        },
+        {
+            show: coverage.helmetUnknown > 0 || coverage.vestUnknown > 0,
+            label: "APD tidak terbaca",
+            value: `${coverage.helmetUnknown.toLocaleString("id-ID")} helm · ${coverage.vestUnknown.toLocaleString("id-ID")} rompi`,
+            why: "Tertutup tiang, atau orangnya membelakangi kamera. Tidak dihitung sebagai apa pun — menghitungnya patuh menyembunyikan pelanggaran, menghitungnya pelanggaran membanjiri operator dengan alarm palsu.",
+        },
+        {
+            show: monoShare > 0,
+            label: "Frame mode inframerah",
+            value: `${monoShare}%`,
+            why: "Malam hari. Warna APD tidak dibaca dan deteksi lebih lemah, jadi porsi ini menurunkan keandalan angka di atas.",
+        },
+    ].filter((row) => row.show);
+
+    if (!rows.length) return null;
+
+    return (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <EyeOff className="w-4 h-4 text-slate-400" />
+                Yang tidak terlihat sistem
+            </h3>
+
+            {coverage.percent !== null && helmetRate !== null && (
+                <p className="text-xs text-slate-600 mt-2">
+                    Angka kepatuhan di atas berlaku untuk bagian yang terlihat saja:{" "}
+                    <strong>
+                        {helmetRate}% patuh dari {coverage.percent}% waktu terpantau
+                    </strong>
+                    . Menyebut keduanya bersama adalah satu-satunya bentuk yang bisa
+                    dipertanggungjawabkan.
+                </p>
+            )}
+
+            <div className="mt-4 divide-y divide-slate-100">
+                {rows.map((row) => (
+                    <div key={row.label} className="py-3 flex items-baseline gap-4">
+                        <span className="text-sm font-bold text-slate-900 tabular-nums shrink-0 min-w-24">
+                            {row.value}
+                        </span>
+                        <div>
+                            <p className="text-xs font-semibold text-slate-700">{row.label}</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">{row.why}</p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 export default function HSECharts({
     summary,
     health,
@@ -411,6 +537,7 @@ export default function HSECharts({
 }) {
     const helmetRate = complianceRate(summary.helmetOk, summary.helmetMissing);
     const vestRate = complianceRate(summary.vestOk, summary.vestMissing);
+    const coverage = summary.coverage;
 
     return (
         <div className="space-y-5">
@@ -469,12 +596,22 @@ export default function HSECharts({
                     tone={summary.openCount > 0 ? "bad" : undefined}
                 />
                 <Tile
-                    icon={Activity}
-                    label="Frame dianalisis"
-                    value={summary.frames.toLocaleString("id-ID")}
-                    sub={`${summary.personCount.toLocaleString("id-ID")} deteksi orang`}
+                    icon={Eye}
+                    label="Waktu terpantau"
+                    value={coverage.percent === null ? "—" : `${coverage.percent}%`}
+                    sub={
+                        coverage.percent === null
+                            ? "belum ada kamera HSE"
+                            : `${summary.frames.toLocaleString("id-ID")} frame · ${summary.personCount.toLocaleString("id-ID")} deteksi orang`
+                    }
+                    // Ambangnya sengaja rendah. Ini bukan nilai mutu, tapi
+                    // peringatan: di bawah 80% ada lubang waktu yang cukup besar
+                    // untuk menyembunyikan pelanggaran sepenuhnya.
+                    tone={coverage.percent === null ? undefined : coverage.percent >= 80 ? "good" : "bad"}
                 />
             </div>
+
+            <BlindSpots coverage={coverage} days={days} helmetRate={helmetRate} />
 
             {/* Dua grafik terpisah, bukan satu grafik dua sumbu: helm dan rompi
                 adalah dua ukuran berbeda, dan menumpuknya di satu bidang membuat
