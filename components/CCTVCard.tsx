@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import CCTVPlayer from "./CCTVPlayer";
+import { frameAspect } from "@/lib/cctv";
 import { Camera } from "lucide-react";
 
 export default function CCTVCard({
@@ -11,6 +12,11 @@ export default function CCTVCard({
   slug,
   groupSlug,
   isActive = true,
+  // Dimensi frame kamera. Kartu ikut bentuk aslinya: kamera corridor mode
+  // mengirim frame tegak, dan memaksanya ke 16:9 menyisakan pillarbox hitam
+  // selebar dua pertiga kartu.
+  frameWidth,
+  frameHeight,
   selectionMode = false,
   isSelected = false,
   onToggleSelect,
@@ -22,6 +28,8 @@ export default function CCTVCard({
   slug?: string | null;
   groupSlug?: string | null;
   isActive?: boolean;
+  frameWidth?: number | null;
+  frameHeight?: number | null;
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: () => void;
@@ -33,6 +41,14 @@ export default function CCTVCard({
   // kali sebelum menyerah ke placeholder.
   const [thumbnailAttempt, setThumbnailAttempt] = useState(0);
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  // Nilai dari DB yang menentukan sampai stream benar-benar jalan — itu yang
+  // membuat render pertama sudah berbentuk benar, tanpa layout shift. Pemutar
+  // menimpanya dengan dimensi eksak (tanpa pembulatan thumbnail) lewat onAspect.
+  // Sengaja override, bukan state yang di-seed dari props: daftar kamera bisa
+  // dimuat ulang (peta digeser, cache dibatalkan) dan props yang baru harus
+  // menang selama pemutarnya belum berkata lain.
+  const [liveAspect, setLiveAspect] = useState<string | null>(null);
+  const aspect = liveAspect ?? frameAspect({ frameWidth, frameHeight });
 
   const handleThumbnailError = () => {
       if (thumbnailAttempt >= 2) {
@@ -104,14 +120,15 @@ export default function CCTVCard({
       </div>
 
       {/* Video Container */}
-      <div 
-        className="aspect-video bg-slate-900 relative cursor-pointer"
+      <div
+        className="bg-slate-900 relative cursor-pointer"
+        style={{ aspectRatio: aspect }}
         onClick={handleCardClick}
       >
         {isActive ? (
             streamName ? (
             isPlaying ? (
-                <CCTVPlayer streamName={streamName} />
+                <CCTVPlayer streamName={streamName} onAspect={setLiveAspect} />
             ) : (
                 // Thumbnail / Placeholder State
                 <div className="w-full h-full relative group/thumbnail">

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import CCTVPlayer from "@/components/CCTVPlayer";
 import { notFound } from "next/navigation";
 import { getUserWithMemberships, getUserId } from "@/lib/auth";
+import { frameAspect, frameRatio } from "@/lib/cctv";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +27,11 @@ export default async function CCTVDetailPage({
   const isOwner = currentUserId !== null && currentUserId === cctv.createdById;
   
   const user = await getUserWithMemberships();
-  const isAdmin = user?.memberships.some(m => 
-    m.roleName.toLowerCase().includes('admin') || 
+  const isAdmin = user?.memberships.some(m =>
+    m.roleName.toLowerCase().includes('admin') ||
     m.roleName.toLowerCase().includes('super')
   ) ?? false;
+
 
   // Access Control Logic:
   // 1. If Public: Allow
@@ -58,7 +60,16 @@ export default async function CCTVDetailPage({
        </header>
 
        <div className="flex-1 flex items-center justify-center p-4">
-          <div className="w-full max-w-5xl aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl relative">
+          {/* maxWidth dibatasi juga oleh tinggi layar: kamera portrait di kotak
+              selebar 64rem akan setinggi ~1800px dan penonton harus scroll untuk
+              melihat satu frame. Lebarnya yang mengalah, rasionya tetap. */}
+          <div
+            className="w-full bg-black rounded-2xl overflow-hidden shadow-2xl relative"
+            style={{
+                aspectRatio: frameAspect(cctv),
+                maxWidth: `min(64rem, calc((100dvh - 14rem) * ${frameRatio(cctv)}))`,
+            }}
+          >
              <div className="w-full h-full"> 
                   <CCTVPlayer
                     streamName={cctv.slug}

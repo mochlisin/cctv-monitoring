@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
-import type { CctvBounds } from "@/lib/cctv";
+import { frameAspect, frameRatio, type CctvBounds } from "@/lib/cctv";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import Link from "next/link";
@@ -45,6 +45,8 @@ type CCTV = {
     longitude?: number | null;
     kecamatan?: string | null;
     kota?: string | null;
+    frameWidth?: number | null;
+    frameHeight?: number | null;
     [key: string]: any;
 };
 
@@ -165,8 +167,19 @@ export default function CCTVMap({ data, onPlay, selectedId, onMarkerClick, onBou
                         >
                             <Popup className="custom-popup" minWidth={300} maxWidth={300}>
                                 <div className="p-0 overflow-hidden rounded-xl">
-                                    {/* Video Preview Section */}
-                                    <div className="relative aspect-video bg-black">
+                                    {/* Video Preview Section.
+                                        Popup peta lebarnya terkunci 300px, jadi
+                                        kamera portrait dibatasi lewat tinggi
+                                        (maxWidth diturunkan dari 13rem) supaya
+                                        popup-nya tidak menjulang menutupi peta. */}
+                                    <div
+                                        className="relative bg-black mx-auto"
+                                        style={{
+                                            aspectRatio: frameAspect(cctv),
+                                            width: "100%",
+                                            maxWidth: `calc(13rem * ${frameRatio(cctv)})`,
+                                        }}
+                                    >
                                         {cctv.isActive ? (
                                             <CCTVPlayer streamName={cctv.slug} />
                                         ) : (

@@ -1,8 +1,11 @@
 import { spawn } from "child_process";
 import fs from "fs/promises";
 import path from "path";
+import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { streamPathFor } from "@/lib/streamAccess";
+import { readJpegSize } from "@/lib/jpeg";
+import { CCTV_CACHE_TAG } from "@/lib/cctv";
 
 /**
  * Thumbnail kamera.
@@ -85,6 +88,36 @@ async function readCached(target: string): Promise<{ body: Buffer; ageMs: number
     }
 }
 
+/**
+ * Catat rasio frame kamera dari thumbnail yang baru saja dibuat.
+ *
+ * Filter `scale=-2:${THUMB_HEIGHT}` mempertahankan rasio, jadi dimensi JPEG di
+ * atas sudah cukup untuk tahu kamera ini landscape atau portrait — tanpa ffprobe
+ * dan tanpa koneksi RTSP kedua. Lebarnya dibulatkan ke kelipatan 2 oleh ffmpeg
+ * (1080x1920 tersimpan sebagai 152x270), meleset 0,09% dan tidak kasat mata;
+ * angka eksaknya tetap didapat pemutar dari videoWidth saat stream jalan.
+ *
+ * Best-effort: kegagalan di sini tidak boleh menggagalkan penyajian thumbnail.
+ */
+async function recordFrameSize(slug: string, frame: Buffer): Promise<void> {
+    const size = readJpegSize(frame);
+    if (!size) return;
+
+    try {
+        // Menulis hanya kalau berubah — kalau tidak, setiap penyegaran thumbnail
+        // (tiap TTL, per kamera) menjadi satu UPDATE percuma ke MySQL.
+        const { count } = await prisma.cctv.updateMany({
+            where: { slug, NOT: { frameWidth: size.width, frameHeight: size.height } },
+            data: { frameWidth: size.width, frameHeight: size.height },
+        });
+        // Daftar CCTV publik di-cache 300 detik dengan tag ini; tanpa dibatalkan,
+        // kartu baru memakai rasio benar setelah cache kedaluwarsa sendiri.
+        if (count > 0) revalidateTag(CCTV_CACHE_TAG, "max");
+    } catch {
+        // Biarkan. Rasio akan tercatat pada penyegaran berikutnya.
+    }
+}
+
 /** Satu ffmpeg per kamera, walau banyak kartu meminta bersamaan. */
 function refresh(slug: string, target: string): Promise<Buffer | null> {
     const running = inFlight.get(slug);
@@ -92,7 +125,11 @@ function refresh(slug: string, target: string): Promise<Buffer | null> {
 
     const job = (async () => {
         await fs.mkdir(CACHE_DIR, { recursive: true });
-        return captureFrame(slug, target);
+        const frame = await captureFrame(slug, target);
+        // Di sini, bukan di pemanggil: jalur cache-miss dan jalur
+        // stale-while-revalidate sama-sama lewat sini.
+        if (frame) await recordFrameSize(slug, frame);
+        return frame;
     })().finally(() => inFlight.delete(slug));
 
     inFlight.set(slug, job);
