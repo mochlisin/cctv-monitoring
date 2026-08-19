@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import CCTVPlayer from "@/components/CCTVPlayer";
 import { notFound } from "next/navigation";
 import { getUserWithMemberships } from "@/lib/auth";
-import { frameAspect, frameRatio } from "@/lib/cctv";
 
 export const dynamic = "force-dynamic";
 
@@ -89,15 +88,7 @@ export default async function GroupCCTVDetailPage({
        </header>
 
        <div className="flex-1 flex items-center justify-center p-4">
-          {/* Lebar ikut dibatasi tinggi layar — lihat alasannya di halaman
-              detail publik: kamera portrait di kotak 64rem jadi setinggi ~1800px. */}
-          <div
-            className="w-full bg-black rounded-2xl overflow-hidden shadow-2xl relative"
-            style={{
-                aspectRatio: frameAspect(cctv),
-                maxWidth: `min(64rem, calc((100dvh - 14rem) * ${frameRatio(cctv)}))`,
-            }}
-          >
+          <div className="w-full max-w-5xl aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl relative">
              <div className="w-full h-full"> 
                   <CCTVPlayer
                     streamName={cctv.slug}

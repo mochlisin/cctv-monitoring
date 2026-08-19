@@ -166,22 +166,13 @@ export default function CCTVPlayer({
   // tetap memeriksa sendiri (dan mewajibkan sesi), jadi prop ini semata-mata
   // menghindari membuka koneksi yang sudah pasti ditolak.
   hse = false,
-  // Dipanggil sekali per sesi dengan rasio sebenarnya dari stream, mis. "9/16".
-  // Container di sekeliling player biasanya sudah tahu rasionya dari kolom
-  // frameWidth/frameHeight di DB; ini untuk pemanggil yang tidak punya baris
-  // CCTV-nya (multiview hanya menerima slug dari query string), sekaligus
-  // mengoreksi diri kalau setting rotasi di kamera diubah.
-  onAspect,
 }: {
   streamName: string;
   hse?: boolean;
-  onAspect?: (aspect: string) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
-  // Rasio terakhir yang sudah dilaporkan lewat onAspect.
-  const reportedAspectRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -259,7 +250,7 @@ export default function CCTVPlayer({
     };
   }, [syncActive]);
 
-  // Fullscreen di HP: putar layar mengikuti bentuk videonya, seperti YouTube.
+  // Fullscreen di HP: putar otomatis ke landscape seperti YouTube.
   useEffect(() => {
     const onFullscreenChange = () => {
         const entered = Boolean(
@@ -274,16 +265,7 @@ export default function CCTVPlayer({
         if (entered) {
             // Hanya di perangkat sentuh — jangan paksa rotasi layar desktop.
             if (window.matchMedia("(pointer: coarse)").matches) {
-                // Ikuti bentuk videonya, jangan selalu landscape. Kamera corridor
-                // mode mengirim frame tegak; memaksa HP ke landscape untuk video
-                // 9:16 justru membuat bar hitamnya paling lebar. videoWidth baru
-                // terisi setelah metadata siap — sebelum itu landscape adalah
-                // tebakan yang benar untuk mayoritas kamera.
-                const video = videoRef.current;
-                const portrait = Boolean(
-                    video && video.videoHeight > 0 && video.videoHeight > video.videoWidth
-                );
-                orientation.lock?.(portrait ? "portrait" : "landscape")?.catch(() => undefined);
+                orientation.lock?.("landscape")?.catch(() => undefined);
             }
         } else {
             orientation.unlock?.();
@@ -831,19 +813,6 @@ export default function CCTVPlayer({
       }
   };
 
-  // Bentuk frame baru diketahui pasti setelah metadata sampai. Dilaporkan sekali
-  // per nilai: induk umumnya menyimpannya di state, dan melaporkan angka yang
-  // sama tiap kali stream dibangun ulang akan memicu render tanpa guna.
-  const handleLoadedMetadata = () => {
-      const video = videoRef.current;
-      if (!video?.videoWidth || !video.videoHeight) return;
-
-      const aspect = `${video.videoWidth}/${video.videoHeight}`;
-      if (reportedAspectRef.current === aspect) return;
-      reportedAspectRef.current = aspect;
-      onAspect?.(aspect);
-  };
-
   const toggleFullscreen = (e?: React.MouseEvent) => {
       e?.stopPropagation();
       const container = containerRef.current;
@@ -1008,7 +977,6 @@ export default function CCTVPlayer({
         playsInline
         preload="none"
         disablePictureInPicture
-        onLoadedMetadata={handleLoadedMetadata}
         className="w-full h-full object-contain pointer-events-none"
         style={{ transform: zoom === 1 ? undefined : `scale(${zoom})` }}
       />

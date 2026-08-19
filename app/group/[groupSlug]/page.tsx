@@ -75,7 +75,7 @@ export default async function GroupCCTVPage({
 
       <div className="max-w-7xl mx-auto px-6 py-10">
         {cctvs.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {cctvs.map((cctv) => (
               <CCTVCard
                 key={cctv.id}
@@ -83,8 +83,6 @@ export default async function GroupCCTVPage({
                 streamName={String(cctv.id)}
                 slug={cctv.slug}
                 groupSlug={group.slug}
-                frameWidth={cctv.frameWidth}
-                frameHeight={cctv.frameHeight}
               />
             ))}
           </div>

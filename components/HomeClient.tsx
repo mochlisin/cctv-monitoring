@@ -258,10 +258,7 @@ export default function HomeClient({ cctvs, total = 0 }: { cctvs: Cctv[]; total?
                                         </span>
                                 </div>
 
-                                {/* items-start: kartu kamera portrait dua kali
-                                    lebih tinggi, dan tanpa ini seluruh barisnya
-                                    ikut meregang. */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-start">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                                     {locationCctvs.map((cctv) => (
                                      <div id={`cctv-card-${cctv.id}`} key={cctv.id}>
                                         <CCTVCard
@@ -270,9 +267,7 @@ export default function HomeClient({ cctvs, total = 0 }: { cctvs: Cctv[]; total?
                                             slug={cctv.slug}
                                             groupSlug={cctv.group?.slug}
                                             isActive={cctv.isActive}
-                                            frameWidth={cctv.frameWidth}
-                                            frameHeight={cctv.frameHeight}
-
+                                            
                                             selectionMode={selectionMode}
                                             isSelected={selectedIds.includes(cctv.id)}
                                             onToggleSelect={() => handleToggleSelect(cctv.id)}

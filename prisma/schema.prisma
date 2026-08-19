@@ -155,19 +155,6 @@ model Cctv {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Dimensi frame asli, diisi sendiri oleh route thumbnail dari JPEG yang sudah
-  // terlanjur dibuatnya. Null = belum pernah ter-probe; UI jatuh ke 16:9.
-  //
-  // Ada karena kamera corridor mode (dipasang di gang sempit) mengirim frame
-  // TEGAK, mis. 1080x1920. Tanpa angka ini setiap container 16:9 menyisakan
-  // pillarbox hitam ~70% lebar, dan kartunya jadi kotak hitam besar.
-  //
-  // Disimpan sebagai dimensi mentah, bukan string rasio: dua kamera 9:16 dengan
-  // resolusi berbeda tetap terbedakan, dan angkanya berguna saat menelusuri
-  // kenapa HSE_MIN_PERSON_HEIGHT membuang banyak deteksi di satu kamera.
-  frameWidth  Int?
-  frameHeight Int?
-
   // HSE monitoring
   // Menyalakan ini membuat kamera ditarik RTSP-nya terus-menerus oleh worker
   // HSE, bukan lagi on-demand. Itu beban tetap ke kamera dan ke CPU, jadi

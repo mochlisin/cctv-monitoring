@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import  {Suspense, useCallback, useState} from "react";
+import  {Suspense} from "react";
 import CCTVPlayer from "@/components/CCTVPlayer";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -12,14 +12,6 @@ function MultiViewContent() {
     // Berisi slug kamera (UUID), bukan ID numerik.
     const slugs = searchParams.get("ids")?.split(",").filter(Boolean) || [];
     const ids = slugs;
-
-    // Halaman ini hanya menerima slug dari query string dan tidak pernah query DB,
-    // jadi rasio tiap tile datang dari pemutarnya sendiri saat metadata stream
-    // sampai. Sebelum itu 16:9 — bentuk mayoritas kamera.
-    const [aspects, setAspects] = useState<Record<string, string>>({});
-    const recordAspect = useCallback((slug: string, aspect: string) => {
-        setAspects((prev) => (prev[slug] === aspect ? prev : { ...prev, [slug]: aspect }));
-    }, []);
 
     return (
         <div className="min-h-screen bg-slate-950 text-white">
@@ -41,9 +33,7 @@ function MultiViewContent() {
             {/* Grid */}
             {/* Di layar kecil selalu 1 kolom: tile 4 kolom di HP tidak terbaca
                 dan memaksa decoding video sebanyak jumlah tile sekaligus. */}
-            {/* items-start: satu tile portrait setinggi dua kali tidak boleh
-                meregangkan tile landscape di barisnya. */}
-            <div className={`p-2 sm:p-4 grid gap-2 sm:gap-4 h-[calc(100dvh-64px)] overflow-y-auto auto-rows-min items-start
+            <div className={`p-2 sm:p-4 grid gap-2 sm:gap-4 h-[calc(100dvh-64px)] overflow-y-auto auto-rows-min
                 ${ids.length === 1 ? 'grid-cols-1' : ''}
                 ${ids.length === 2 ? 'grid-cols-1 md:grid-cols-2' : ''}
                 ${ids.length >= 3 && ids.length <= 4 ? 'grid-cols-1 sm:grid-cols-2' : ''}
@@ -52,11 +42,8 @@ function MultiViewContent() {
             `}>
                 {ids.map((slug, index) => (
                     <div key={slug} className="relative bg-black rounded-xl overflow-hidden border border-slate-800 group">
-                        <div className="relative" style={{ aspectRatio: aspects[slug] ?? "16/9" }}>
-                            <CCTVPlayer
-                                streamName={slug}
-                                onAspect={(aspect) => recordAspect(slug, aspect)}
-                            />
+                        <div className="relative aspect-video">
+                            <CCTVPlayer streamName={slug} />
                         </div>
                         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur px-2 py-1 rounded text-xs font-mono font-bold z-40 pointer-events-none">
                             CAM {index + 1}

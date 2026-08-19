@@ -34,10 +34,6 @@ const PUBLIC_SELECT = {
   latitude: true,
   longitude: true,
   isActive: true,
-  // Bentuk frame kamera — kartu dan tile peta memakainya supaya kamera portrait
-  // tidak dipaksa masuk kotak 16:9. Bukan data sensitif.
-  frameWidth: true,
-  frameHeight: true,
   group: { select: { name: true, slug: true } },
 } satisfies Prisma.CctvSelect;
 
