@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img" aria-label="MINS CCTV">
+  <title>MINS CCTV</title>
+  <!--
+    Sumber ikon MINS CCTV: kamera dome + lensa sebagai lubang.
+    Geometri ini kembar dengan GLYPH_PATH di components/brand/Logo.tsx — ubah
+    keduanya bersamaan, lalu `npm run icons` untuk membangun ulang
+    favicon.ico dan apple-icon.png dari file ini.
+  -->
+  <rect width="32" height="32" rx="8" fill="#2563eb"/>
+  <path fill="#fff" fill-rule="evenodd" d="M10.75 8.7H21.25A1.5 1.5 0 0 1 22.75 10.2V12.8H9.25V10.2A1.5 1.5 0 0 1 10.75 8.7ZM5.5 12.8H26.5A10.5 10.5 0 0 1 5.5 12.8ZM16 14.05A4 4 0 1 0 16 22.05A4 4 0 1 0 16 14.05Z"/>
+</svg>

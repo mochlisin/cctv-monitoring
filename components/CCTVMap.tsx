@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import type { CctvBounds } from "@/lib/cctv";
+import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM, isPlausibleIdCoord } from "@/lib/mapDefaults";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import Link from "next/link";
@@ -66,14 +67,20 @@ function MapController({ selectedId, data }: { selectedId?: number | null, data:
     return null;
 }
 
+/** Sisi bebas di tepi peta saat mengurung penanda, plus batas zoom masuk. */
+const FIT_BOUNDS_OPTIONS: L.FitBoundsOptions = { padding: [48, 48], maxZoom: 16 };
+
+/** Zoom kalau cuma ada satu kamera — tidak ada rentang untuk dikurung. */
+const SINGLE_POINT_ZOOM = 16;
+
 function getCoordinates(cctv: CCTV, index: number): [number, number] {
     if (cctv.latitude && cctv.longitude) {
         return [Number(cctv.latitude), Number(cctv.longitude)];
     }
-    // Fallback Mock: Center of Jakarta approx -6.2088, 106.8456
-    const baseLat = -6.2088;
-    const baseLng = 106.8456;
-    const offset = 0.01;
+    // Fallback Mock: sebar di sekitar Jalan Intan 2.5, KBD. Offset kecil supaya
+    // penanda tetap masuk viewport di DEFAULT_MAP_ZOOM yang rapat.
+    const [baseLat, baseLng] = DEFAULT_MAP_CENTER;
+    const offset = 0.0015;
     return [
         baseLat + (Math.random() - 0.5) * offset * (index + 1), 
         baseLng + (Math.random() - 0.5) * offset * (index + 1)
@@ -122,12 +129,64 @@ function BoundsWatcher({ onChange }: { onChange: (bounds: CctvBounds) => void })
     return null;
 }
 
+/**
+ * Kurung semua penanda satu kali saja, untuk kasus data baru tiba setelah peta
+ * ter-mount (mode bounds-fetching mulai dengan daftar kosong). Rentang awal saat
+ * data sudah ada di render pertama ditangani prop `bounds` di MapContainer.
+ *
+ * Sekali saja karena: (1) di atas MAP_BOUNDS_THRESHOLD setiap pergeseran peta
+ * memuat data baru, dan mengurung ulang tiap kali akan menyeret peta balik terus
+ * — pengguna tidak akan bisa menggeser; (2) begitu pengguna menggeser atau
+ * memilih kamera, viewport adalah miliknya, bukan milik kita.
+ */
+function InitialFitBounds({ points, skip }: { points: [number, number][]; skip: boolean }) {
+    const map = useMap();
+    const doneRef = useRef(false);
+    const userMovedRef = useRef(false);
+
+    useEffect(() => {
+        const markMoved = () => { userMovedRef.current = true; };
+        map.on("dragstart", markMoved);
+        map.on("zoomstart", markMoved);
+        return () => {
+            map.off("dragstart", markMoved);
+            map.off("zoomstart", markMoved);
+        };
+    }, [map]);
+
+    useEffect(() => {
+        if (doneRef.current || userMovedRef.current || skip) return;
+        if (points.length < 2) return;
+        doneRef.current = true;
+        map.fitBounds(L.latLngBounds(points), FIT_BOUNDS_OPTIONS);
+    }, [points, skip, map]);
+
+    return null;
+}
+
 export default function CCTVMap({ data, onPlay, selectedId, onMarkerClick, onBoundsChange }: CCTVMapProps) {
-    // Calculate center based on average of points if available, else default
-    const validCoords = data.filter(c => c.latitude && c.longitude);
-    const center: [number, number] = validCoords.length > 0
-        ? [validCoords.reduce((acc, c) => acc + (c.latitude || 0), 0) / validCoords.length, validCoords.reduce((acc, c) => acc + (c.longitude || 0), 0) / validCoords.length]
-        : [-6.2088, 106.8456];
+    /**
+     * Titik-titik yang layak dipakai untuk menentukan viewport awal. Koordinat
+     * placeholder (mis. 1,1) dibuang supaya peta tidak melompat ke tengah laut.
+     */
+    const points = useMemo<[number, number][]>(
+        () => data
+            .filter(c => isPlausibleIdCoord(Number(c.latitude), Number(c.longitude)))
+            .map(c => [Number(c.latitude), Number(c.longitude)] as [number, number]),
+        [data]
+    );
+
+    /**
+     * Tampilan awal:
+     *  - >1 kamera  -> kurung semua penanda (bounds), zoom mengikuti sebaran
+     *  - 1 kamera   -> pusatkan ke kamera itu
+     *  - 0 kamera   -> jatuh ke Jl. Intan 2.5, Kota Baru Driyorejo
+     * Rata-rata koordinat tidak lagi dipakai: pada sebaran lintas kota titiknya
+     * bisa mendarat di antah berantah dan zoom tetap membuat penanda di luar layar.
+     */
+    const initialBounds = points.length > 1 ? L.latLngBounds(points) : undefined;
+    const center: [number, number] = points.length === 1 ? points[0] : DEFAULT_MAP_CENTER;
+    const zoom = points.length === 1 ? SINGLE_POINT_ZOOM : DEFAULT_MAP_ZOOM;
 
     // Ref to track if we should open popup programmatically
     const markerRefs = useRef<Record<number, L.Marker | null>>({});
@@ -140,13 +199,25 @@ export default function CCTVMap({ data, onPlay, selectedId, onMarkerClick, onBou
 
     return (
         <div className="w-full h-full z-0 relative bg-slate-100">
-             <MapContainer center={center} zoom={13} scrollWheelZoom={true} className="w-full h-full z-0 outline-none">
+             <MapContainer
+                /* react-leaflet memakai center+zoom lebih dulu dan baru melihat
+                   bounds kalau keduanya null — jadi keduanya harus dikosongkan
+                   saat kita ingin peta mengurung penanda. */
+                center={initialBounds ? undefined : center}
+                zoom={initialBounds ? undefined : zoom}
+                bounds={initialBounds}
+                boundsOptions={FIT_BOUNDS_OPTIONS}
+                scrollWheelZoom={true}
+                className="w-full h-full z-0 outline-none"
+             >
                 <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
                     url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                 />
                 
                 <MapController selectedId={selectedId} data={data} />
+                {/* Kalau sudah ada kamera terpilih, jangan rebut viewport-nya. */}
+                <InitialFitBounds points={points} skip={Boolean(selectedId)} />
                 {onBoundsChange && <BoundsWatcher onChange={onBoundsChange} />}
 
                 {data.map((cctv, idx) => {
@@ -163,7 +234,7 @@ export default function CCTVMap({ data, onPlay, selectedId, onMarkerClick, onBou
                                 click: () => onMarkerClick && onMarkerClick(cctv.id)
                             }}
                         >
-                            <Popup className="custom-popup" minWidth={300} maxWidth={300}>
+                            <Popup className="custom-popup" minWidth={220} maxWidth={300} autoPanPadding={[16, 16]}>
                                 <div className="p-0 overflow-hidden rounded-xl">
                                     {/* Video Preview Section */}
                                     <div className="relative aspect-video bg-black">
@@ -227,10 +298,26 @@ export default function CCTVMap({ data, onPlay, selectedId, onMarkerClick, onBou
                 }
                 .leaflet-popup-content {
                     margin: 0;
-                    width: 300px !important;
+                    /* Ikut lebar layar di ponsel sempit, mentok 300px di layar besar. */
+                    width: min(300px, calc(100vw - 4rem)) !important;
                 }
                 .leaflet-popup-tip-container {
                     margin-top: -2px;
+                }
+                /* Kontrol zoom seukuran jempol di perangkat sentuh. */
+                @media (pointer: coarse) {
+                    .leaflet-touch .leaflet-bar a {
+                        width: 40px;
+                        height: 40px;
+                        line-height: 40px;
+                        font-size: 22px;
+                    }
+                }
+                /* Di ponsel, atribusi diangkat agar tidak tertutup bottom nav. */
+                @media (max-width: 767px) {
+                    .leaflet-bottom.leaflet-right {
+                        margin-bottom: calc(5.25rem + env(safe-area-inset-bottom));
+                    }
                 }
             `}</style>
         </div>

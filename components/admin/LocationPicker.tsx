@@ -6,6 +6,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Search, Loader2 } from "lucide-react";
 import { searchLocation, type GeocodeResult } from "@/actions/geocode";
+import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from "@/lib/mapDefaults";
 
 // Fix icons
 const iconUrl = "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png";
@@ -55,10 +56,10 @@ export default function LocationPicker({ latitude, longitude, onLocationSelect }
     const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
     const [showResults, setShowResults] = useState(false);
     
-    // Default Center (Jakarta) or Current Selection
-    const defaultCenter: [number, number] = latitude && longitude 
-        ? [latitude, longitude] 
-        : [-6.2088, 106.8456];
+    // Default Center (Kota Baru Driyorejo) or Current Selection
+    const defaultCenter: [number, number] = latitude && longitude
+        ? [latitude, longitude]
+        : DEFAULT_MAP_CENTER;
 
     const handleSearch = async (e?: React.FormEvent | React.KeyboardEvent | React.MouseEvent) => {
         if (e) e.preventDefault();
@@ -90,7 +91,7 @@ export default function LocationPicker({ latitude, longitude, onLocationSelect }
                     <div className="relative flex-1">
                         <input
                             type="text"
-                            placeholder="Cari lokasi (e.g. Monas, Kecamatan Gambir)..."
+                            placeholder="Cari lokasi (e.g. Jalan Intan 2.5, Kota Baru Driyorejo)..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onKeyDown={(e) => {
@@ -131,7 +132,7 @@ export default function LocationPicker({ latitude, longitude, onLocationSelect }
 
              {/* Map Container */}
              <div className="h-[400px] rounded-xl overflow-hidden border-2 border-slate-200 relative z-0">
-                <MapContainer center={defaultCenter} zoom={latitude ? 16 : 12} className="w-full h-full">
+                <MapContainer center={defaultCenter} zoom={latitude ? 16 : DEFAULT_MAP_ZOOM} className="w-full h-full">
                     {/* Modern Tiles: CartoDB Positron */}
                     <TileLayer
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'

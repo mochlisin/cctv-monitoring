@@ -40,12 +40,17 @@ export default function MapSidebar({ cctvs, onSelect, selectedId }: MapSidebarPr
   // Let's stick to a flat list first as it's easier to search and scan quickly in a sidebar.
 
   return (
-    <div className="w-full h-full bg-white flex flex-col border-r border-slate-200">
+    <div className="w-full h-full min-h-0 bg-white flex flex-col md:border-r md:border-slate-200">
       {/* Header & Search */}
-      <div className="p-4 border-b border-slate-100 space-y-4">
-        <div>
-           <h2 className="text-lg font-bold text-slate-900">Peta Lokasi</h2>
-           <p className="text-xs text-slate-500">Cari dan pilih lokasi CCTV</p>
+      <div className="p-4 border-b border-slate-100 space-y-3 sm:space-y-4 shrink-0">
+        <div className="flex items-end justify-between gap-2">
+           <div className="min-w-0">
+             <h2 className="text-base sm:text-lg font-bold text-slate-900">Peta Lokasi</h2>
+             <p className="text-xs text-slate-500">Cari dan pilih lokasi CCTV</p>
+           </div>
+           <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full shrink-0">
+             {filteredCctvs.length}/{cctvs.length}
+           </span>
         </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -53,14 +58,15 @@ export default function MapSidebar({ cctvs, onSelect, selectedId }: MapSidebarPr
             placeholder="Cari jalan atau nama..."
             value={searchQuery}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-slate-50 border-slate-200 focus-visible:ring-blue-600"
+            /* text-base di ponsel: mencegah Safari iOS auto-zoom saat input difokus */
+            className="pl-9 h-11 md:h-10 text-base md:text-sm bg-slate-50 border-slate-200 focus-visible:ring-blue-600"
           />
         </div>
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-2 space-y-1">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+        <div className="p-2 space-y-1 safe-pb">
           {filteredCctvs.length === 0 ? (
              <div className="p-8 text-center text-slate-400 text-sm">
                  Tidak ada lokasi ditemukan.
@@ -79,13 +85,13 @@ export default function MapSidebar({ cctvs, onSelect, selectedId }: MapSidebarPr
                 >
                 <div
                     className={cn(
-                    "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5",
+                    "w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5",
                     selectedId === cctv.id ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-400"
                     )}
                 >
                     <MapPin size={16} />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                     <h3
                     className={cn(
                         "font-bold text-sm line-clamp-1",
@@ -97,14 +103,14 @@ export default function MapSidebar({ cctvs, onSelect, selectedId }: MapSidebarPr
                     <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
                     {cctv.kecamatan || "Umum"}, {cctv.kota || "Lainnya"}
                     </p>
-                    <div className="flex items-center gap-2 mt-2">
-                        {cctv.isActive && (
+                    {cctv.isActive && (
+                        <div className="flex items-center gap-2 mt-2">
                             <span className="flex items-center gap-1 text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100">
                                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
                                 LIVE
                             </span>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
                 </button>
             ))

@@ -10,7 +10,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Map, List, Grid, MonitorPlay, X, LayoutList } from "lucide-react";
 import MapSidebar from "@/components/map/MapSidebar";
-import { 
+import { LogoMark, LogoTile } from "@/components/brand/Logo";
+import { cn } from "@/lib/utils";
+import {
     Sheet, 
     SheetContent, 
     SheetHeader, 
@@ -110,22 +112,28 @@ export default function HomeClient({ cctvs, total = 0 }: { cctvs: Cctv[]; total?
   };
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 selection:bg-blue-100 flex flex-col">
+    <main
+      className={cn(
+        "bg-slate-50 text-slate-900 selection:bg-blue-100 flex flex-col",
+        // Mode peta dikunci setinggi viewport (dvh ikut menyusut saat toolbar
+        // browser ponsel muncul) supaya peta tidak ikut men-scroll halaman.
+        // Mode daftar tetap tumbuh sesuai isi.
+        viewMode === "map" ? "h-dvh overflow-hidden" : "min-h-dvh"
+      )}
+    >
       {/* Modern Sticky Header */}
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-xl supports-[backdrop-filter]:bg-white/60 shrink-0">
-        <div className="max-w-[1920px] mx-auto px-6 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-                 <div className="p-2 bg-blue-600 rounded-xl shadow-lg shadow-blue-200">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                 </div>
-                 <div>
-                    <h1 className="text-lg font-bold tracking-tight text-slate-900">MINS CCTV</h1>
-                    <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">CCTV Masyarakat</p>
+        <div className="max-w-[1920px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                 <LogoTile className="w-9 h-9 shadow-lg shadow-blue-200" />
+                 <div className="min-w-0">
+                    <h1 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 truncate">MINS CCTV</h1>
+                    <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest truncate">CCTV Masyarakat</p>
                  </div>
             </div>
-            
-            {/* View Controls - Desktop Only */}
-            <div className="flex items-center gap-2 hidden md:flex">
+
+            {/* View Controls - Tablet & Desktop */}
+            <div className="hidden md:flex items-center gap-2 shrink-0">
                  <div className="bg-slate-100 p-1 rounded-lg flex items-center">
                     <button 
                         onClick={() => setViewMode("list")}
@@ -181,45 +189,49 @@ export default function HomeClient({ cctvs, total = 0 }: { cctvs: Cctv[]; total?
       </header>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex overflow-hidden">
-        
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+
         {/* Map View Layout */}
         {viewMode === "map" && (
-             <div className="w-full h-[calc(100vh-64px)] flex animate-in fade-in duration-300">
-                {/* Sidebar - Desktop Only (Hidden on Mobile for now per requirement focus) */}
-                <aside className="w-[350px] shrink-0 h-full hidden lg:block z-20 shadow-xl">
-                    <MapSidebar 
-                        cctvs={cctvs} 
+             <div className="w-full h-full flex min-h-0 animate-in fade-in duration-300">
+                {/* Sidebar: tampil sejak tablet; di ponsel diganti bottom sheet */}
+                <aside className="w-70 lg:w-82.5 xl:w-95 shrink-0 h-full hidden md:block z-20 shadow-xl">
+                    <MapSidebar
+                        cctvs={cctvs}
                         onSelect={handleSidebarSelect}
                         selectedId={selectedMapCctvId}
                     />
                 </aside>
                 {/* Map Container */}
-                <div className="flex-1 relative bg-slate-100">
+                <div className="flex-1 min-w-0 relative bg-slate-100">
                      <CCTVMap
                         data={useBoundsFetching ? mapCctvs : cctvs}
                         selectedId={selectedMapCctvId}
                         onMarkerClick={handleMapMarkerClick}
                         onBoundsChange={useBoundsFetching ? handleBoundsChange : undefined}
                      />
-                     {/* Mobile Overlay/Drawer for list view in map mode */}
-                     <div className="absolute bottom-30 left-1/2 -translate-x-1/2 z-20 lg:hidden">
+                     {/* Ponsel: daftar lokasi lewat bottom sheet. Posisi tombol
+                         dihitung agar duduk di atas BottomNav + home indicator. */}
+                     <div
+                        className="absolute left-1/2 -translate-x-1/2 z-20 md:hidden"
+                        style={{ bottom: "calc(6.5rem + env(safe-area-inset-bottom))" }}
+                     >
                         <Sheet open={isMobileSidebarOpen} onOpenChange={setIsMobileSidebarOpen}>
-                            <button 
+                            <button
                                 onClick={() => setIsMobileSidebarOpen(true)}
-                                className="bg-blue-600/90 text-white backdrop-blur-md px-6 py-3 rounded-full shadow-2xl border border-blue-400/20 active:scale-95 transition-all flex items-center gap-2 ring-4 ring-blue-600/10"
+                                className="bg-blue-600/90 text-white backdrop-blur-md px-5 py-3 rounded-full shadow-2xl border border-blue-400/20 active:scale-95 transition-all flex items-center gap-2 ring-4 ring-blue-600/10"
                             >
                                 <LayoutList size={20} />
-                                <span className="text-sm font-bold tracking-tight">Daftar Lokasi</span>
+                                <span className="text-sm font-bold tracking-tight whitespace-nowrap">Daftar Lokasi</span>
                             </button>
-                            <SheetContent side="bottom" className="p-0 h-[80vh] rounded-t-3xl border-t-0 bg-transparent flex flex-col">
+                            <SheetContent side="bottom" className="p-0 h-[85dvh] max-h-[85dvh] rounded-t-3xl border-t-0 bg-transparent flex flex-col">
                                 <SheetHeader className="sr-only">
                                     <SheetTitle>Daftar Lokasi CCTV</SheetTitle>
                                 </SheetHeader>
                                 <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto my-3 shrink-0" />
-                                <div className="flex-1 bg-white rounded-t-3xl overflow-hidden">
-                                    <MapSidebar 
-                                        cctvs={cctvs} 
+                                <div className="flex-1 min-h-0 bg-white rounded-t-3xl overflow-hidden">
+                                    <MapSidebar
+                                        cctvs={cctvs}
                                         onSelect={handleSidebarSelect}
                                         selectedId={selectedMapCctvId}
                                     />
@@ -234,31 +246,31 @@ export default function HomeClient({ cctvs, total = 0 }: { cctvs: Cctv[]; total?
         {/* List View Layout */}
         {viewMode === "list" && (
             <div className="flex-1 overflow-y-auto"> {/* Scrollable Container for List */}
-                <section className="max-w-7xl mx-auto px-6 py-10 space-y-16 pb-20">
+                <section className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-16 pb-20">
                     <div className="animate-in fade-in slide-in-from-bottom-8 duration-500">
                         {Object.entries(groupedCctvs).map(([kota, kecamatans]) => (
-                        <div key={kota} className="relative mb-16 last:mb-0">
+                        <div key={kota} className="relative mb-10 sm:mb-16 last:mb-0">
                             {/* Kota Header */}
-                            <div className="flex items-center gap-4 mb-8">
-                                <h2 className="text-3xl font-extrabold tracking-tight text-slate-950">{kota}</h2>
+                            <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
+                                <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-950 truncate">{kota}</h2>
                                 <div className="h-1 flex-1 bg-gradient-to-r from-blue-100 to-transparent rounded-full"></div>
                             </div>
 
-                            <div className="space-y-12 pl-2">
+                            <div className="space-y-8 sm:space-y-12 sm:pl-2">
                             {Object.entries(kecamatans).map(([kecamatan, locationCctvs]) => (
                                 <div key={kecamatan} className="group/kecamatan">
                                 {/* Kecamatan Sub-header */}
-                                <div className="flex items-center gap-3 mb-5">
-                                        <div className="w-2 h-2 rounded-full bg-blue-600"></div>
-                                        <h3 className="text-lg font-bold text-slate-800 group-hover/kecamatan:text-blue-600 transition-colors">
+                                <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-5">
+                                        <div className="w-2 h-2 rounded-full bg-blue-600 shrink-0"></div>
+                                        <h3 className="text-base sm:text-lg font-bold text-slate-800 group-hover/kecamatan:text-blue-600 transition-colors truncate">
                                             {kecamatan}
                                         </h3>
-                                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
+                                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100 shrink-0">
                                             {locationCctvs.length} UNIT
                                         </span>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-5 sm:gap-8">
                                     {locationCctvs.map((cctv) => (
                                      <div id={`cctv-card-${cctv.id}`} key={cctv.id}>
                                         <CCTVCard
@@ -287,7 +299,7 @@ export default function HomeClient({ cctvs, total = 0 }: { cctvs: Cctv[]; total?
 
                     {cctvs.length === 0 && (
                         <div className="flex flex-col items-center justify-center py-24 text-slate-400 bg-white rounded-3xl border-2 border-dashed border-slate-200">
-                            <svg className="w-12 h-12 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                            <LogoMark className="w-12 h-12 mb-4 opacity-20" />
                             <p className="font-medium">Belum ada kamera CCTV aktif.</p>
                         </div>
                     )}
@@ -295,10 +307,11 @@ export default function HomeClient({ cctvs, total = 0 }: { cctvs: Cctv[]; total?
                 
                  {/* Footer - Only in List Mode or scrolled bottom */}
                  <footer className="border-t border-slate-200 py-12 mt-auto bg-white pb-28 md:pb-12">
-                     <div className="max-w-7xl mx-auto px-6 flex flex-col items-center gap-6 text-sm text-slate-500">
+                     <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col items-center gap-6 text-sm text-slate-500">
                          <div className="flex items-center gap-2">
                              <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center">
-                                 <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                 {/* Mengisi penuh kotaknya: jarak tepi sudah ada di dalam viewBox glyph. */}
+                                 <LogoMark className="w-8 h-8 text-slate-400" />
                              </div>
                              <span className="font-bold text-slate-900">MINS CCTV</span>
                          </div>

@@ -32,7 +32,7 @@ export default function BottomNav() {
   // So BottomNav should probably be inside HomeClient OR HomeClient needs to read URL.
   
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden pb-safe">
+    <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden safe-pb">
       <div className="mx-4 mb-4 bg-white/80 backdrop-blur-xl border border-white/40 shadow-2xl rounded-2xl flex items-center justify-around p-3 supports-[backdrop-filter]:bg-white/60">
         <NavLink href="/?view=list" icon={<Home size={22} />} label="Home" isActive={!pathname.includes("/admin") && !pathname.includes("/multiview") && (!searchParams.get("view") || searchParams.get("view") === "list")} />
         <NavLink href="/?view=map" icon={<MapIcon size={22} />} label="Peta" isActive={searchParams.get("view") === "map"} />

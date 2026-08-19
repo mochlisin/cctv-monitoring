@@ -1,6 +1,7 @@
 "use client";
 import { LayoutDashboard, Camera, Users, Settings, Building2, HardHat } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
+import { LogoTile } from "@/components/brand/Logo";
 
 const menuItems = [
   {
@@ -39,9 +40,7 @@ export default function Sidebar({ open, isSystemSuperAdmin = false, isGroupSuper
       } hidden lg:flex transition-all duration-300 bg-slate-950 text-slate-300 flex-col border-r border-slate-800 shadow-2xl`}
     >
       <div className="p-6 border-b border-slate-900 flex items-center gap-3 h-16">
-        <div className="min-w-[32px] w-8 h-8 bg-blue-600 rounded-lg shadow-lg shadow-blue-900/20 flex items-center justify-center shrink-0">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-        </div>
+        <LogoTile className="w-8 h-8 shadow-lg shadow-blue-900/20" label="MINS CCTV" />
         {open && (
             <div className="overflow-hidden whitespace-nowrap">
                 <span className="text-lg font-bold text-white tracking-tight">MINS</span>
