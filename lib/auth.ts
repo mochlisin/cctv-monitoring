@@ -103,7 +103,7 @@ export async function login(prevState: any, formData: FormData) {
     const cookieStore = await cookies();
     cookieStore.set("auth-token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: false,
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 7, // 7 hari
     });
