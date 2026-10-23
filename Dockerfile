@@ -6,8 +6,8 @@ COPY . .
 ARG DATABASE_URL="mysql://mysql:***@bfufhewigg34b8ccqhpj0zbb:3306/default"
 ENV DATABASE_URL=$DATABASE_URL
 RUN npx prisma generate
-RUN npx prisma db push --skip-generate || true
-RUN npx prisma db seed || true
+RUN npx prisma db push --skip-generate
+RUN node prisma/seed.mjs
 RUN npm run build
 
 FROM node:22-alpine AS runner
