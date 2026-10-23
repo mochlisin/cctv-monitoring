@@ -52,7 +52,7 @@ const MAX_DRIFT_SECONDS = 6;
 //
 // Jitter buffer normal berkisar 50–200 ms. Di atas satu detik, ada frame yang
 // menumpuk di suatu tempat.
-const WEBRTC_MAX_DELAY_SECONDS = 1.2;
+const WEBRTC_MAX_DELAY_SECONDS = 5.0;
 // Batas yang diminta ke browser di muka (Chrome 114+ `jitterBufferTarget`).
 const WEBRTC_TARGET_DELAY_MS = 150;
 const WEBRTC_STATS_INTERVAL_MS = 4000;
