@@ -19,14 +19,18 @@ export async function GET(
       cache: "no-store",
     });
 
-    const headers = new Headers(upstream.headers);
-    headers.set("Access-Control-Allow-Origin", "*");
+    const resHeaders: Record<string, string> = {
+      "Access-Control-Allow-Origin": "*",
+    };
+    const contentType = upstream.headers.get("content-type");
+    if (contentType) resHeaders["Content-Type"] = contentType;
 
-    return new NextResponse(upstream.body, {
+    const data = await upstream.arrayBuffer();
+    return new NextResponse(data, {
       status: upstream.status,
-      headers,
+      headers: resHeaders,
     });
-  } catch {
-    return new NextResponse("Stream proxy error", { status: 502 });
+  } catch (e) {
+    return new NextResponse(`Stream proxy error: ${String(e)}`, { status: 502 });
   }
 }
