@@ -82,6 +82,7 @@ type MediamtxPathConf = {
     rtspTransport?: string;
     runOnDemand?: string;
     runOnDemandRestart?: boolean;
+    runOnDemandCloseAfter?: string;
 };
 
 type MediamtxList<T> = { items?: T[] };
