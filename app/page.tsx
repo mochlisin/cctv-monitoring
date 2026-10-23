@@ -5,7 +5,7 @@ import HomeClient from "@/components/HomeClient";
 // Tidak lagi force-dynamic: daftarnya di-cache dan diberi tag, lalu dibatalkan
 // dari action yang mengubah data. Halaman publik yang ramai tidak lagi memukul
 // MySQL sekali per request.
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const [cctvs, total] = await Promise.all([
