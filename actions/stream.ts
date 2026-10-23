@@ -148,7 +148,8 @@ function desiredConf(source: string): MediamtxPathConf {
  * detik. Diam-diam, dan hanya di produksi.
  */
 function needsUpdate(current: MediamtxPathConf, source: string): boolean {
-    return true;
+    const desired = desiredConf(source);
+    return current.runOnInit !== desired.runOnInit || current.source !== desired.source;
 }
 
 /**
