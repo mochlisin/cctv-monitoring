@@ -148,6 +148,9 @@ function desiredConf(source: string): MediamtxPathConf {
  * detik. Diam-diam, dan hanya di produksi.
  */
 function needsUpdate(current: MediamtxPathConf, source: string): boolean {
+    // Jangan pernah update/hapus path kalau sumbernya sama dan runOnInit sudah ada.
+    // Ini mencegah MediaMTX mereset stream tiap kali sinkronisasi berkala berjalan.
+    if (current.source === source && current.runOnInit) return false;
     const desired = desiredConf(source);
     return current.runOnInit !== desired.runOnInit || current.source !== desired.source;
 }
