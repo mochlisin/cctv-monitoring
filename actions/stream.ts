@@ -80,6 +80,8 @@ type MediamtxPathConf = {
     sourceOnDemand?: boolean;
     sourceOnDemandCloseAfter?: string;
     rtspTransport?: string;
+    runOnInit?: string;
+    runOnInitRestart?: boolean;
     runOnDemand?: string;
     runOnDemandRestart?: boolean;
     runOnDemandCloseAfter?: string;
@@ -123,8 +125,8 @@ function rtspSourceFor(cctv: { ipAddress: string | null; streamUrl: string | nul
 
 function desiredConf(source: string): MediamtxPathConf {
     return {
-        runOnDemand: `ffmpeg -rtsp_transport tcp -i ${source} -c:v libx264 -preset ultrafast -tune zerolatency -an -f rtsp rtsp://127.0.0.1:8554/$MTX_PATH`,
-        runOnDemandRestart: true,
+        runOnInit: `ffmpeg -rtsp_transport tcp -i ${source} -c:v libx264 -preset ultrafast -tune zerolatency -an -f rtsp rtsp://127.0.0.1:8554/$MTX_PATH`,
+        runOnInitRestart: true,
         rtspTransport: rtspTransport(),
     };
 }
@@ -146,7 +148,7 @@ function desiredConf(source: string): MediamtxPathConf {
  * detik. Diam-diam, dan hanya di produksi.
  */
 function needsUpdate(current: MediamtxPathConf, source: string): boolean {
-    return false;
+    return true;
 }
 
 /**

@@ -27,7 +27,7 @@ webrtcLocalTCPAddress: :8189
 webrtcIPsFromInterfaces: yes
 # Untuk akses dari luar LAN, isi dengan IP publik / domain server:
 # webrtcAdditionalHosts: [cctv.example.id]
-webrtcAdditionalHosts: [cctv2.minsnetwork.com]
+webrtcAdditionalHosts: [cctv2.minsnetwork.com, 10.5.41.151]
 
 ###############################################
 # HLS — fallback kalau WebRTC gagal (UDP diblokir, browser lama)

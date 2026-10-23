@@ -35,7 +35,7 @@ const STUN_URL = process.env.NEXT_PUBLIC_WEBRTC_STUN;
 const TRANSPORT_MODE = process.env.NEXT_PUBLIC_STREAM_TRANSPORT ?? "auto";
 
 // Batas tunggu sampai WebRTC benar-benar tersambung sebelum menyerah ke HLS.
-const WEBRTC_CONNECT_TIMEOUT_MS = 8000;
+const WEBRTC_CONNECT_TIMEOUT_MS = 15000;
 // Waktu maksimal menunggu ICE gathering sebelum offer dikirim apa adanya.
 const ICE_GATHER_TIMEOUT_MS = 1500;
 // Seberapa jauh playback HLS boleh tertinggal dari live edge sebelum lompat maju.
@@ -297,7 +297,7 @@ export default function CCTVPlayer({
     let teardown: () => void = () => undefined;
 
     const fallbackToHls = (reason: string) => {
-        if (cancelled || TRANSPORT_MODE === "webrtc") return;
+        if (cancelled) return;
         console.warn(`[CCTVPlayer] ${reason} — beralih ke HLS`);
         setTransport("hls");
     };
