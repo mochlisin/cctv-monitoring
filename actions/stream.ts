@@ -80,6 +80,8 @@ type MediamtxPathConf = {
     sourceOnDemand?: boolean;
     sourceOnDemandCloseAfter?: string;
     rtspTransport?: string;
+    runOnDemand?: string;
+    runOnDemandRestart?: boolean;
 };
 
 type MediamtxList<T> = { items?: T[] };
@@ -120,10 +122,8 @@ function rtspSourceFor(cctv: { ipAddress: string | null; streamUrl: string | nul
 
 function desiredConf(source: string): MediamtxPathConf {
     return {
-        source,
-        // Kamera baru dihubungi saat ada penonton, dan diputus lagi setelah sepi.
-        sourceOnDemand: true,
-        sourceOnDemandCloseAfter: CLOSE_AFTER,
+        runOnDemand: `ffmpeg -rtsp_transport tcp -i ${source} -c:v libx264 -preset ultrafast -tune zerolatency -an -f rtsp rtsp://127.0.0.1:8554/$MTX_PATH`,
+        runOnDemandRestart: true,
         rtspTransport: rtspTransport(),
     };
 }
@@ -147,6 +147,7 @@ function desiredConf(source: string): MediamtxPathConf {
 function needsUpdate(current: MediamtxPathConf, source: string): boolean {
     const desired = desiredConf(source);
     return (
+        current.runOnDemand !== desired.runOnDemand ||
         current.source !== desired.source ||
         current.rtspTransport !== desired.rtspTransport
     );
@@ -193,7 +194,8 @@ export async function syncStreamPaths(): Promise<{ synced: number; removed: numb
             await mediamtx("POST", `/v3/config/paths/add/${name}`, desiredConf(source));
             synced++;
         } else if (needsUpdate(current, source)) {
-            await mediamtx("PATCH", `/v3/config/paths/patch/${name}`, desiredConf(source));
+            await mediamtx("DELETE", `/v3/config/paths/delete/${name}`);
+            await mediamtx("POST", `/v3/config/paths/add/${name}`, desiredConf(source));
             synced++;
         }
     }
