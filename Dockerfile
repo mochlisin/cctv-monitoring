@@ -3,7 +3,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-ENV DATABASE_URL="mysql://root:PnKyM0z1RkuGCUa96s5yEq5UDAnjlXX5ffkU2WIuBTkpjmS7Tusj5UH6SPHLEdu6@uve2axpbnthw5ner8ysipmtw:3306/default"
+ENV DATABASE_URL="mysql://root:***@uve2axpbnthw5ner8ysipmtw:3306/default"
+RUN npx prisma generate
 RUN npx prisma db push --skip-generate || true
 RUN npm run build
 
