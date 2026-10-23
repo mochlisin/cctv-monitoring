@@ -34,10 +34,10 @@ webrtcAdditionalHosts: [cctv2.minsnetwork.com, 10.5.41.151]
 ###############################################
 hls: yes
 hlsAddress: 127.0.0.1:8888
-hlsVariant: lowLatency
-hlsSegmentDuration: 1s
-hlsPartDuration: 200ms
-hlsAlwaysRemux: no
+hlsVariant: fmp4
+hlsSegmentDuration: 2s
+hlsSegmentCount: 5
+hlsAlwaysRemux: yes
 
 ###############################################
 # RTSP lokal — hanya untuk pengambilan thumbnail

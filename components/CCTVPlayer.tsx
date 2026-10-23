@@ -522,24 +522,18 @@ export default function CCTVPlayer({
         // tidak player akan terus kehabisan data lalu nudge/seek (nyendet).
         const hls = new Hls({
           enableWorker: true,
-          lowLatencyMode: true,
+          lowLatencyMode: false,
           liveSyncDurationCount: 3,
           liveMaxLatencyDurationCount: 10,
           liveDurationInfinity: true,
-          // Mengejar ketertinggalan kecil dengan mempercepat pemutaran sedikit,
-          // bukan dengan melompat. Tanpa ini hls.js hanya punya satu alat —
-          // seek keras saat ambang maksimum terlampaui — sehingga playback
-          // boleh berkeliaran beberapa detik di belakang live edge tanpa
-          // dikoreksi sama sekali, dan setiap sendatan menambah jaraknya.
-          maxLiveSyncPlaybackRate: 1.5,
-          maxBufferLength: 8,
-          maxMaxBufferLength: 20,
-          maxBufferSize: 20 * 1000 * 1000,
-          backBufferLength: 6,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          maxBufferSize: 60 * 1000 * 1000,
+          backBufferLength: 10,
           capLevelToPlayerSize: true,
-          manifestLoadingMaxRetry: 4,
-          levelLoadingMaxRetry: 4,
-          fragLoadingMaxRetry: 6,
+          manifestLoadingMaxRetry: 6,
+          levelLoadingMaxRetry: 6,
+          fragLoadingMaxRetry: 10,
           nudgeMaxRetry: 10,
           debug: false,
         });
@@ -585,9 +579,10 @@ export default function CCTVPlayer({
           }
         });
 
-        const driftTimer = setInterval(seekToLiveEdge, 5000);
+        // Drift timer dinonaktifkan agar tidak memotong playback HLS buffer yang wajar
+        // const driftTimer = setInterval(seekToLiveEdge, 5000);
         teardown = () => {
-            clearInterval(driftTimer);
+            // clearInterval(driftTimer);
             hls.destroy();
             if (hlsRef.current === hls) hlsRef.current = null;
         };
