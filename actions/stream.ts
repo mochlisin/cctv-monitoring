@@ -124,6 +124,7 @@ function desiredConf(source: string): MediamtxPathConf {
     return {
         runOnDemand: `ffmpeg -rtsp_transport tcp -i ${source} -c:v libx264 -preset ultrafast -tune zerolatency -an -f rtsp rtsp://127.0.0.1:8554/$MTX_PATH`,
         runOnDemandRestart: true,
+        runOnDemandCloseAfter: "60s",
         rtspTransport: rtspTransport(),
     };
 }

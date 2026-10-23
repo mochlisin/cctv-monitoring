@@ -105,7 +105,7 @@ type LockableOrientation = ScreenOrientation & {
     unlock?: () => void;
 };
 
-const initialTransport: Transport = TRANSPORT_MODE === "hls" ? "hls" : "webrtc";
+const initialTransport: Transport = "hls";
 
 /** Tunggu ICE gathering selesai, tapi jangan sampai menahan koneksi terlalu lama. */
 function waitForIceGathering(pc: RTCPeerConnection, timeoutMs: number) {

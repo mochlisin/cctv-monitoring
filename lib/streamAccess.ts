@@ -69,5 +69,5 @@ export async function verifyStreamGrant(
  */
 export function grantCookiePaths(slug: string): string[] {
     const path = streamPathFor(slug);
-    return PROXY_PREFIXES.map((prefix) => `${prefix}/${path}`);
+    return ["/", ...PROXY_PREFIXES.map((prefix) => `${prefix}/${path}`)];
 }
