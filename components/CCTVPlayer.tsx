@@ -35,7 +35,7 @@ const STUN_URL = process.env.NEXT_PUBLIC_WEBRTC_STUN;
 const TRANSPORT_MODE = process.env.NEXT_PUBLIC_STREAM_TRANSPORT ?? "auto";
 
 // Batas tunggu sampai WebRTC benar-benar tersambung sebelum menyerah ke HLS.
-const WEBRTC_CONNECT_TIMEOUT_MS = 15000;
+const WEBRTC_CONNECT_TIMEOUT_MS = 4000;
 // Waktu maksimal menunggu ICE gathering sebelum offer dikirim apa adanya.
 const ICE_GATHER_TIMEOUT_MS = 1500;
 // Seberapa jauh playback HLS boleh tertinggal dari live edge sebelum lompat maju.
@@ -105,7 +105,7 @@ type LockableOrientation = ScreenOrientation & {
     unlock?: () => void;
 };
 
-const initialTransport: Transport = "webrtc";
+const initialTransport: Transport = TRANSPORT_MODE === "hls" ? "hls" : "webrtc";
 
 /** Tunggu ICE gathering selesai, tapi jangan sampai menahan koneksi terlalu lama. */
 function waitForIceGathering(pc: RTCPeerConnection, timeoutMs: number) {
@@ -392,44 +392,8 @@ export default function CCTVPlayer({
       };
 
       const watchLatency = () => {
-        stopWatching();
-        let previous: LatencySample | null = null;
-        let breaches = 0;
-
-        statsTimer = setInterval(() => {
-            if (cancelled) return;
-
-            pc.getStats().then((report) => {
-                if (cancelled) return;
-
-                const sample = readLatencySample(report);
-                if (!sample) return;
-
-                const prior = previous;
-                previous = sample;
-                if (!prior) return;
-
-                // Selisih antar sampel, bukan rerata seumur sesi: yang terakhir
-                // itu bergerak terlalu lambat untuk dipakai sebagai alarm, dan
-                // akan menutupi lonjakan yang baru saja terjadi.
-                const emitted = sample.emitted - prior.emitted;
-                // Tidak ada frame keluar sama sekali berarti siaran macet, bukan
-                // tertinggal — itu urusan penanganan galat, bukan pengawas ini.
-                if (emitted <= 0) return;
-
-                const delaySeconds = (sample.delay - prior.delay) / emitted;
-                if (delaySeconds <= WEBRTC_MAX_DELAY_SECONDS) {
-                    breaches = 0;
-                    return;
-                }
-
-                // Dua pelanggaran berturut-turut. Satu sampel bisa saja hanya
-                // sendatan jaringan sesaat yang pulih sendiri; menyambung ulang
-                // karenanya justru merugikan.
-                breaches += 1;
-                if (breaches >= 2) restartForLatency(delaySeconds);
-            }).catch(() => undefined);
-        }, WEBRTC_STATS_INTERVAL_MS);
+        // Dinonaktifkan: browser WebRTC buffer bervariasi tergantung kondisi jaringan.
+        // Restart otomatis karena latensi membuat video berhenti berkala.
       };
 
       pc.onconnectionstatechange = () => {
@@ -555,6 +519,12 @@ export default function CCTVPlayer({
             setError(null);
         });
 
+        const onPlaying = () => {
+            setLoading(false);
+            setError(null);
+        };
+        video.addEventListener("playing", onPlaying);
+
         hls.on(Hls.Events.ERROR, (_event, data: ErrorData) => {
           if (!data.fatal) {
             if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) seekToLiveEdge();
@@ -582,7 +552,7 @@ export default function CCTVPlayer({
         // Drift timer dinonaktifkan agar tidak memotong playback HLS buffer yang wajar
         // const driftTimer = setInterval(seekToLiveEdge, 5000);
         teardown = () => {
-            // clearInterval(driftTimer);
+            video.removeEventListener("playing", onPlaying);
             hls.destroy();
             if (hlsRef.current === hls) hlsRef.current = null;
         };

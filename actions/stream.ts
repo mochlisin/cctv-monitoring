@@ -125,7 +125,7 @@ function rtspSourceFor(cctv: { ipAddress: string | null; streamUrl: string | nul
 
 function desiredConf(source: string): MediamtxPathConf {
     return {
-        runOnInit: `ffmpeg -rtsp_transport tcp -i ${source} -c:v copy -an -f rtsp rtsp://127.0.0.1:8554/$MTX_PATH`,
+        runOnInit: `ffmpeg -rtsp_transport tcp -i ${source} -c:v libx264 -preset ultrafast -tune zerolatency -b:v 2000k -maxrate 2500k -bufsize 5000k -g 50 -an -f rtsp rtsp://127.0.0.1:8554/$MTX_PATH`,
         runOnInitRestart: true,
         rtspTransport: rtspTransport(),
     };
@@ -133,24 +133,8 @@ function desiredConf(source: string): MediamtxPathConf {
 
 /**
  * Apakah path yang sudah ada di MediaMTX perlu ditulis ulang?
- *
- * Transport ikut dibandingkan, bukan hanya source. Tanpa itu, mengubah
- * MEDIAMTX_RTSP_TRANSPORT tidak akan pernah berpengaruh pada kamera yang sudah
- * terdaftar — path lama bertahan dengan transport lamanya sampai kamera dihapus
- * dan dibuat ulang, dan gejalanya adalah "sudah diganti ke UDP tapi tetap
- * telat".
- *
- * Sengaja hanya membandingkan dua medan bertipe string apa adanya. Medan durasi
- * seperti sourceOnDemandCloseAfter tidak ikut: MediaMTX menormalkan format
- * durasi saat menyimpan, sehingga "10s" yang kita kirim bisa kembali dalam
- * bentuk lain — dan perbandingan yang selalu gagal berarti PATCH tiap kali
- * sinkronisasi berjalan, yang memuat ulang path dan memutus siaran tiap 60
- * detik. Diam-diam, dan hanya di produksi.
  */
 function needsUpdate(current: MediamtxPathConf, source: string): boolean {
-    // Jangan pernah update/hapus path kalau sumbernya sama dan runOnInit sudah ada.
-    // Ini mencegah MediaMTX mereset stream tiap kali sinkronisasi berkala berjalan.
-    if (current.source === source && current.runOnInit) return false;
     const desired = desiredConf(source);
     return current.runOnInit !== desired.runOnInit || current.source !== desired.source;
 }
