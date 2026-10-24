@@ -125,7 +125,7 @@ function rtspSourceFor(cctv: { ipAddress: string | null; streamUrl: string | nul
 
 function desiredConf(source: string): MediamtxPathConf {
     return {
-        runOnInit: `ffmpeg -rtsp_transport tcp -i ${source} -c:v copy -c:a aac -f rtsp rtsp://127.0.0.1:8554/$MTX_PATH`,
+        runOnInit: `ffmpeg -rtsp_transport tcp -i ${source} -c:v libx264 -preset ultrafast -tune zerolatency -threads 2 -b:v 2000k -maxrate 2500k -bufsize 5000k -g 50 -c:a aac -b:a 64k -f rtsp rtsp://127.0.0.1:8554/$MTX_PATH`,
         runOnInitRestart: true,
         rtspTransport: rtspTransport(),
     };
