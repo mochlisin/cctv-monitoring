@@ -546,7 +546,21 @@ export default function CCTVPlayer({
                 });
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
-              hls.recoverMediaError();
+              if (data.details === Hls.ErrorDetails.MANIFEST_INCOMPATIBLE_CODECS_ERROR) {
+                // Browser tidak support codec kamera (HEVC). Coba native player.
+                const src = streamUrl;
+                hls.destroy();
+                if (hlsRef.current === hls) hlsRef.current = null;
+                if (video.canPlayType("video/mp4; codecs=\"hvc1\"") || video.canPlayType("video/mp4; codecs=\"hev1\"")) {
+                  video.src = src;
+                  video.play().catch(() => { video.muted = true; setIsMuted(true); video.play().catch(() => undefined); });
+                } else {
+                  setError("Browser tidak mendukung codec kamera ini (HEVC). Gunakan Safari atau Edge.");
+                  setLoading(false);
+                }
+              } else {
+                hls.recoverMediaError();
+              }
               break;
             default:
               setError("Gagal memuat siaran");
