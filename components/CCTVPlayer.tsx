@@ -534,10 +534,16 @@ export default function CCTVPlayer({
           console.error("Fatal HLS error:", data.type, data.details);
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              // Bisa jadi grant menonton sudah kedaluwarsa; perbarui lalu ulangi.
+              // Bisa jadi grant kedaluwarsa atau transcode ffmpeg sedang restart; perbarui & ulangi setelah 2 detik.
               requestStreamAccess(streamName)
                 .catch(() => undefined)
-                .then(() => { if (!cancelled) hls.startLoad(); });
+                .then(() => {
+                  if (!cancelled) {
+                    setTimeout(() => {
+                      if (!cancelled) hls.startLoad();
+                    }, 2000);
+                  }
+                });
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
               hls.recoverMediaError();
