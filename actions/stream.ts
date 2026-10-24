@@ -125,8 +125,9 @@ function rtspSourceFor(cctv: { ipAddress: string | null; streamUrl: string | nul
 
 function desiredConf(source: string): MediamtxPathConf {
     return {
-        runOnInit: `ffmpeg -rtsp_transport tcp -i ${source} -c:v libx264 -preset ultrafast -tune zerolatency -threads 2 -b:v 2000k -maxrate 2500k -bufsize 5000k -g 50 -c:a aac -b:a 64k -f rtsp rtsp://127.0.0.1:8554/$MTX_PATH`,
-        runOnInitRestart: true,
+        runOnDemand: `ffmpeg -rtsp_transport tcp -i ${source} -c:v libx264 -preset ultrafast -tune zerolatency -threads 2 -b:v 2000k -maxrate 2500k -bufsize 5000k -g 50 -c:a aac -b:a 64k -f rtsp rtsp://127.0.0.1:8554/$MTX_PATH`,
+        runOnDemandRestart: true,
+        runOnDemandCloseAfter: "10s",
         rtspTransport: rtspTransport(),
     };
 }
@@ -136,7 +137,11 @@ function desiredConf(source: string): MediamtxPathConf {
  */
 function needsUpdate(current: MediamtxPathConf, source: string): boolean {
     const desired = desiredConf(source);
-    return current.runOnInit !== desired.runOnInit || current.source !== desired.source;
+    return (
+        current.runOnDemand !== desired.runOnDemand ||
+        current.runOnInit !== desired.runOnInit ||
+        current.source !== desired.source
+    );
 }
 
 /**
