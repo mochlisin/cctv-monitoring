@@ -2,45 +2,32 @@ import { spawn } from "child_process";
 import fs from "fs/promises";
 import path from "path";
 import { prisma } from "@/lib/prisma";
-import { streamPathFor } from "@/lib/streamAccess";
 
-/**
- * Thumbnail kamera.
- *
- * Ini endpoint HTTP, bukan server action, karena `<img src>` butuh URL — sebuah
- * action tidak bisa melayani binary ke tag img tanpa memaksa base64 masuk ke
- * HTML. Kategorinya sama dengan proxy media: transport, bukan API data.
- *
- * Sumbernya RTSP lokal MediaMTX, bukan kamera langsung. Dua keuntungannya:
- * kredensial kamera tidak pernah muncul di argumen proses ffmpeg (yang terlihat
- * di daftar proses sistem), dan koneksi ke kamera tetap satu walau banyak yang
- * meminta thumbnail sekaligus.
- */
-
-const RTSP_ORIGIN = process.env.MEDIA_RTSP_ORIGIN ?? "rtsp://127.0.0.1:8554";
-const TTL_SECONDS = Number(process.env.THUMBNAIL_TTL_SECONDS ?? 60);
+const TTL_SECONDS = Number(process.env.THUMBNAIL_TTL_SECONDS ?? 300);
 const CACHE_DIR = path.join(process.cwd(), ".thumbnails");
-// Permintaan pertama harus menunggu MediaMTX membuka koneksi RTSP ke kamera
-// (sourceOnDemandStartTimeout bawaannya 10 detik), jadi batas ini harus lebih
-// longgar dari itu — kalau tidak, thumbnail pertama nyaris selalu gagal.
-const FFMPEG_TIMEOUT_MS = 20_000;
+const FFMPEG_TIMEOUT_MS = 10_000;
 const THUMB_HEIGHT = 270;
 
-// Banyak kartu meminta thumbnail yang sama sekaligus; cukup satu ffmpeg.
 const inFlight = new Map<string, Promise<Buffer | null>>();
 
 export const dynamic = "force-dynamic";
 
-function captureFrame(slug: string, target: string): Promise<Buffer | null> {
+function rtspSourceFor(cctv: { ipAddress: string | null; streamUrl: string | null }) {
+    const candidate = (cctv.ipAddress || cctv.streamUrl || "").trim();
+    return candidate.startsWith("rtsp://") ? candidate : null;
+}
+
+function captureFrame(source: string, target: string): Promise<Buffer | null> {
     return new Promise((resolve) => {
         const args = [
             "-nostdin",
             "-hide_banner",
             "-loglevel", "error",
             "-rtsp_transport", "tcp",
-            "-i", `${RTSP_ORIGIN}/${streamPathFor(slug)}`,
+            "-i", source,
             "-frames:v", "1",
             "-vf", `scale=-2:${THUMB_HEIGHT}`,
+            "-threads", "1",
             "-q:v", "5",
             "-y", target,
         ];
@@ -86,13 +73,13 @@ async function readCached(target: string): Promise<{ body: Buffer; ageMs: number
 }
 
 /** Satu ffmpeg per kamera, walau banyak kartu meminta bersamaan. */
-function refresh(slug: string, target: string): Promise<Buffer | null> {
+function refresh(slug: string, source: string, target: string): Promise<Buffer | null> {
     const running = inFlight.get(slug);
     if (running) return running;
 
     const job = (async () => {
         await fs.mkdir(CACHE_DIR, { recursive: true });
-        return captureFrame(slug, target);
+        return captureFrame(source, target);
     })().finally(() => inFlight.delete(slug));
 
     inFlight.set(slug, job);
@@ -121,9 +108,12 @@ export async function GET(
 
     const cctv = await prisma.cctv.findUnique({
         where: { slug },
-        select: { isActive: true },
+        select: { isActive: true, ipAddress: true, streamUrl: true },
     });
     if (!cctv?.isActive) return new Response("Not Found", { status: 404 });
+
+    const source = rtspSourceFor(cctv);
+    if (!source) return new Response("Not Found", { status: 404 });
 
     const target = path.join(CACHE_DIR, `${slug}.jpg`);
 
@@ -134,16 +124,13 @@ export async function GET(
     }
 
     if (cached) {
-        // Stale-while-revalidate. Kamera hanya mengirim keyframe tiap beberapa
-        // detik, sehingga menangkap frame baru selalu makan waktu selama itu.
-        // Tidak ada gunanya menahan pengguna: sajikan frame lama sekarang, lalu
-        // segarkan di latar belakang untuk permintaan berikutnya.
-        void refresh(slug, target).catch(() => undefined);
+        // Stale-while-revalidate.
+        void refresh(slug, source, target).catch(() => undefined);
         return jpeg(cached.body, 10);
     }
 
-    // Belum pernah ada frame untuk kamera ini — mau tidak mau menunggu.
-    const frame = await refresh(slug, target);
+    // Belum pernah ada frame untuk kamera ini — tunggu sebentar.
+    const frame = await refresh(slug, source, target);
     if (frame) return jpeg(frame, TTL_SECONDS);
 
     // Biarkan UI memakai placeholder-nya.
