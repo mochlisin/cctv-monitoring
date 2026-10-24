@@ -1005,7 +1005,7 @@ export default function CCTVPlayer({
                     </button>
                 )}
 
-                {!compact && (
+                {!tiny && (
                     <button aria-label={isMuted ? "Bunyikan" : "Bisukan"} onClick={toggleMute} className={`${buttonSize} flex items-center justify-center text-white hover:text-blue-400 transition active:scale-95`}>
                         {isMuted ? <VolumeX /> : <Volume2 />}
                     </button>
