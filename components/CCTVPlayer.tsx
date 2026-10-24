@@ -31,8 +31,8 @@ const StopIcon = () => (
 const WEBRTC_BASE = process.env.NEXT_PUBLIC_WEBRTC_BASE ?? "/webrtc-proxy";
 const HLS_BASE = process.env.NEXT_PUBLIC_HLS_BASE ?? "/stream-proxy";
 const STUN_URL = process.env.NEXT_PUBLIC_WEBRTC_STUN;
-// "auto" (WebRTC dulu, jatuh ke HLS) | "hls" (paksa HLS) | "webrtc" (tanpa fallback)
-const TRANSPORT_MODE = process.env.NEXT_PUBLIC_STREAM_TRANSPORT ?? "auto";
+// "hls" (default stabil di balik Cloudflare/CDN) | "webrtc" | "auto"
+const TRANSPORT_MODE = process.env.NEXT_PUBLIC_STREAM_TRANSPORT ?? "hls";
 
 // Batas tunggu sampai WebRTC benar-benar tersambung sebelum menyerah ke HLS.
 const WEBRTC_CONNECT_TIMEOUT_MS = 4000;
