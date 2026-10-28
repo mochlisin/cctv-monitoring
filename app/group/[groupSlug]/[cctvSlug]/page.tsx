@@ -112,9 +112,6 @@ export default async function GroupCCTVDetailPage({
                 
                 <div className="text-slate-400">Kota</div>
                 <div>{cctv.kota || '-'}</div>
-                
-                <div className="text-slate-400">RT / RW</div>
-                <div>{cctv.rt || '-'} / {cctv.rw || '-'}</div>
             </dl>
           </div>
        </div>
