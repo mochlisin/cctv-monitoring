@@ -5,6 +5,12 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "MINS CCTV - CCTV Masyarakat",
   description: "CCTV Masyarakat",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "CCTV Sasmito",
+  },
 };
 
 /**
