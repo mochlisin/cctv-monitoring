@@ -34,14 +34,14 @@ const PUBLIC_SELECT = {
   latitude: true,
   longitude: true,
   isActive: true,
+  isPublic: true,
+  groupId: true,
   group: { select: { name: true, slug: true } },
 } satisfies Prisma.CctvSelect;
 
 /** Sama seperti PUBLIC_SELECT, plus kolom yang dibutuhkan tabel admin. */
 const ADMIN_SELECT = {
   ...PUBLIC_SELECT,
-  isPublic: true,
-  groupId: true,
   createdById: true,
   createdAt: true,
   updatedAt: true,
@@ -510,4 +510,75 @@ export async function toggleCCTVActive(id: number, isActive: boolean) {
   revalidatePath("/cctv");
   revalidatePath("/");
   revalidatePath("/admin/cctv");
+}
+
+
+/**
+ * CCTV untuk halaman utama / dashboard monitoring.
+ * - Guest: hanya kamera publik
+ * - Super admin: semua kamera (publik + semua grup)
+ * - User biasa: kamera publik + kamera milik grupnya
+ */
+export async function getHomeData() {
+  const user = await getUserWithMemberships();
+  let cctvs: PublicCctv[] = [];
+  let isSuper = false;
+
+  if (!user) {
+    cctvs = await prisma.cctv.findMany({
+      where: {
+        isPublic: true,
+        isActive: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+      select: PUBLIC_SELECT,
+    });
+  } else {
+    isSuper = user.memberships.some(
+      (m) =>
+        (m.groupSlug === "default" || m.groupId === 1) &&
+        m.roleName.toLowerCase().includes("super")
+    );
+
+    if (isSuper) {
+      cctvs = await prisma.cctv.findMany({
+        where: { isActive: true },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+        select: PUBLIC_SELECT,
+      });
+    } else {
+      const groupIds = user.memberships.map((m) => m.groupId);
+      cctvs = await prisma.cctv.findMany({
+        where: {
+          isActive: true,
+          OR: [
+            { isPublic: true },
+            { groupId: { in: groupIds } },
+            { createdById: user.id },
+          ],
+        },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+        select: PUBLIC_SELECT,
+      });
+    }
+  }
+
+  const userGroupIds = user ? user.memberships.map((m) => m.groupId) : [];
+
+  return {
+    cctvs,
+    total: cctvs.length,
+    user: user
+      ? {
+          id: user.id,
+          username: user.username,
+          name: user.name,
+          isSuper,
+          groupIds: userGroupIds,
+        }
+      : null,
+  };
 }
