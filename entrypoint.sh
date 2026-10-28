@@ -4,5 +4,5 @@
 
 # Jalankan migrasi, seed, dan Next.js
 npx prisma db push --skip-generate || true
-node prisma/seed.mjs || true
+npx prisma db seed || true
 npm start
