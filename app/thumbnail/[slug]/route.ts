@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 
 const TTL_SECONDS = Number(process.env.THUMBNAIL_TTL_SECONDS ?? 300);
 const CACHE_DIR = path.join(process.cwd(), ".thumbnails");
-const FFMPEG_TIMEOUT_MS = 10_000;
+const FFMPEG_TIMEOUT_MS = 3_000;
 const THUMB_HEIGHT = 270;
 
 const inFlight = new Map<string, Promise<Buffer | null>>();
@@ -133,9 +133,10 @@ export async function GET(
     const frame = await refresh(slug, source, target);
     if (frame) return jpeg(frame, TTL_SECONDS);
 
-    // Biarkan UI memakai placeholder-nya.
-    return new Response("Unavailable", {
-        status: 503,
-        headers: { "Cache-Control": "no-store" },
+    // Gagal capture frame, simpan buffer kosong di cache dengan TTL pendek (10 detik)
+    // agar ffmpeg tidak terus menerus di-spawn setiap kali ada request jika kamera offline.
+    return new Response(new Uint8Array(0), {
+        status: 200,
+        headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=10" },
     });
 }
