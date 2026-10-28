@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const HLS_ORIGIN = process.env.MEDIA_HLS_ORIGIN ?? "http://127.0.0.1:8888";
+const HLS_ORIGIN = process.env.MEDIA_HLS_ORIGIN ?? "http://localhost:8888";
 
 export async function GET(
   request: NextRequest,

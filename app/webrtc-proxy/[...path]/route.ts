@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const WEBRTC_ORIGIN = process.env.MEDIA_WEBRTC_ORIGIN ?? "http://127.0.0.1:8889";
+const WEBRTC_ORIGIN = process.env.MEDIA_WEBRTC_ORIGIN ?? "http://localhost:8889";
 
 async function proxy(request: NextRequest, params: Promise<{ path: string[] }>) {
   const { path } = await params;
