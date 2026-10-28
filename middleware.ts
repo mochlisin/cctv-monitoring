@@ -19,7 +19,10 @@ export default async function middleware(request: NextRequest) {
     const slug = slugFromProxyPath(pathname);
     if (!slug) return new NextResponse("Forbidden", { status: 403 });
 
-    const granted = true;
+    const granted = await verifyStreamGrant(
+      request.cookies.get(STREAM_GRANT_COOKIE)?.value,
+      slug
+    );
     if (!granted) return new NextResponse("Forbidden", { status: 403 });
 
     return NextResponse.next();
@@ -32,7 +35,7 @@ export default async function middleware(request: NextRequest) {
   const isLoginPage = pathname === "/login";
 
   if (token && isLoginPage) {
-    return NextResponse.redirect(new URL("/admin", request.url));
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   if (!token && !isLoginPage) {
