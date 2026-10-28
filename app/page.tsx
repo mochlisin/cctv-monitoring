@@ -1,23 +1,15 @@
 import { Suspense } from "react";
-import { getPublicCctvs, getPublicCctvCount } from "@/actions/cctv";
+import { getHomeData } from "@/actions/cctv";
 import HomeClient from "@/components/HomeClient";
 
-// Tidak lagi force-dynamic: daftarnya di-cache dan diberi tag, lalu dibatalkan
-// dari action yang mengubah data. Halaman publik yang ramai tidak lagi memukul
-// MySQL sekali per request.
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [cctvs, total] = await Promise.all([
-    getPublicCctvs(),
-    getPublicCctvCount(),
-  ]);
+  const { cctvs, total, user } = await getHomeData();
 
-  // HomeClient memakai useSearchParams; tanpa Suspense, halaman ini tidak bisa
-  // di-prerender dan kita kehilangan manfaat cache-nya.
   return (
     <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-      <HomeClient cctvs={cctvs} total={total} />
+      <HomeClient initialCctvs={cctvs} total={total} currentUser={user} />
     </Suspense>
   );
 }
