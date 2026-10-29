@@ -11,12 +11,12 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 selection:bg-blue-100 p-6">
       <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100">
         <div className="text-center">
-            <LogoTile className="w-14 h-14 shadow-lg shadow-blue-200 mb-4" label="MINS CCTV" />
+            <LogoTile className="w-14 h-14 shadow-lg shadow-blue-200 mb-4" label="CCTV" />
           <h2 className="text-3xl font-extrabold tracking-tight text-slate-950">
-            Login Admin
+            Login
           </h2>
           <p className="mt-2 text-sm font-medium text-slate-500">
-            Masuk ke sistem monitoring CCTV
+            Masuk ke sistem CCTV
           </p>
         </div>
 
