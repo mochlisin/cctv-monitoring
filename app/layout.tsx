@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MINS CCTV - CCTV Masyarakat",
+  title: "{process.env.NEXT_PUBLIC_APP_TITLE || 'MINS CCTV'} - CCTV Masyarakat",
   description: "CCTV Masyarakat",
   manifest: "/manifest.json",
   appleWebApp: {
