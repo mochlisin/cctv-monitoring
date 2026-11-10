@@ -43,8 +43,7 @@ export default function Sidebar({ open, isSystemSuperAdmin = false, isGroupSuper
         <LogoTile className="w-8 h-8 shadow-lg shadow-blue-900/20" label="{process.env.NEXT_PUBLIC_APP_TITLE || 'MINS CCTV'}" />
         {open && (
             <div className="overflow-hidden whitespace-nowrap">
-                <span className="text-lg font-bold text-white tracking-tight">MINS</span>
-                <span className="ml-1 text-lg font-light text-slate-400">CCTV</span>
+                <span className="text-lg font-bold text-white tracking-tight">{process.env.NEXT_PUBLIC_APP_TITLE || 'MINS CCTV'}</span>
             </div>
         )}
       </div>
