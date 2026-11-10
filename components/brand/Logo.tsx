@@ -82,7 +82,7 @@ export function Logo({
                 </span>
                 {tagline && (
                     <span className="block text-[10px] font-bold text-blue-600 uppercase tracking-widest truncate">
-                        CCTV Masyarakat
+                        {process.env.NEXT_PUBLIC_DESC || 'CCTV Masyarakat'}
                     </span>
                 )}
             </div>
