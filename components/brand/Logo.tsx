@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Logo MINS CCTV: kamera dome tergantung di plat plafon, dengan lensa sebagai
+ * Logo {process.env.NEXT_PUBLIC_APP_TITLE || 'MINS CCTV'}: kamera dome tergantung di plat plafon, dengan lensa sebagai
  * lubang (fill-rule evenodd) supaya latar apa pun bisa menembus.
  *
  * Digambar di grid 32x32 dan sengaja dioptical-center — tinggi glyph 14.6 unit
@@ -24,7 +24,7 @@ const GLYPH_PATH =
 
 interface MarkProps {
     className?: string;
-    /** Isi kalau logo berdiri sendiri tanpa teks "MINS CCTV" di sebelahnya. */
+    /** Isi kalau logo berdiri sendiri tanpa teks "{process.env.NEXT_PUBLIC_APP_TITLE || 'MINS CCTV'}" di sebelahnya. */
     label?: string;
 }
 
@@ -78,7 +78,7 @@ export function Logo({
             <LogoTile className={cn("w-9 h-9 shadow-lg shadow-blue-200", tileClassName)} />
             <div className="min-w-0">
                 <span className="block text-base sm:text-lg font-bold tracking-tight text-slate-900 truncate">
-                    MINS CCTV
+                    {process.env.NEXT_PUBLIC_APP_TITLE || 'MINS CCTV'}
                 </span>
                 {tagline && (
                     <span className="block text-[10px] font-bold text-blue-600 uppercase tracking-widest truncate">
