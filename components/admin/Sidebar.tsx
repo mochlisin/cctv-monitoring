@@ -40,7 +40,7 @@ export default function Sidebar({ open, isSystemSuperAdmin = false, isGroupSuper
       } hidden lg:flex transition-all duration-300 bg-slate-950 text-slate-300 flex-col border-r border-slate-800 shadow-2xl`}
     >
       <div className="p-6 border-b border-slate-900 flex items-center gap-3 h-16">
-        <LogoTile className="w-8 h-8 shadow-lg shadow-blue-900/20" label="MINS CCTV" />
+        <LogoTile className="w-8 h-8 shadow-lg shadow-blue-900/20" label="{process.env.NEXT_PUBLIC_APP_TITLE || 'MINS CCTV'}" />
         {open && (
             <div className="overflow-hidden whitespace-nowrap">
                 <span className="text-lg font-bold text-white tracking-tight">MINS</span>
