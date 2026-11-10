@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "../globals.css";
 
 export const metadata: Metadata = {
-  title: "Login - MINS CCTV",
-  description: "MINS CCTV",
+  title: "Login - {process.env.NEXT_PUBLIC_APP_TITLE || 'MINS CCTV'}",
+  description: "{process.env.NEXT_PUBLIC_APP_TITLE || 'MINS CCTV'}",
 };
 
 export default function AuthLayout({
