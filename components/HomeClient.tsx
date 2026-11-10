@@ -174,7 +174,7 @@ export default function HomeClient({
                  <LogoTile className="w-9 h-9 shadow-lg shadow-blue-200" />
                  <div className="min-w-0">
                     <h1 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 truncate">{process.env.NEXT_PUBLIC_APP_TITLE || 'MINS CCTV'}</h1>
-                    <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest truncate">CCTV Masyarakat</p>
+                    <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest truncate">{process.env.NEXT_PUBLIC_DESC || 'CCTV Masyarakat'}</p>
                  </div>
             </div>
 
