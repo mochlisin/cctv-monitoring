@@ -173,7 +173,7 @@ export default function HomeClient({
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                  <LogoTile className="w-9 h-9 shadow-lg shadow-blue-200" />
                  <div className="min-w-0">
-                    <h1 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 truncate">MINS CCTV</h1>
+                    <h1 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 truncate">{process.env.NEXT_PUBLIC_APP_TITLE || 'MINS CCTV'}</h1>
                     <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest truncate">CCTV Masyarakat</p>
                  </div>
             </div>
@@ -494,7 +494,7 @@ export default function HomeClient({
                              <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center">
                                  <LogoMark className="w-8 h-8 text-slate-400" />
                              </div>
-                             <span className="font-bold text-slate-900">MINS CCTV</span>
+                             <span className="font-bold text-slate-900">{process.env.NEXT_PUBLIC_APP_TITLE || 'MINS CCTV'}</span>
                          </div>
                          <p className="text-center max-w-2xl">© 2026 MINS. Tayangan CCTV ini bersifat publik untuk keamanan bersama. Pantau lingkungan kita untuk masa depan yang lebih aman.</p>
                      </div>
